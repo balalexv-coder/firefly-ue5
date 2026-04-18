@@ -1,0 +1,67 @@
+# ---------- Unreal Engine ----------
+UnrealProject/Binaries/
+UnrealProject/Build/
+UnrealProject/DerivedDataCache/
+UnrealProject/Intermediate/
+UnrealProject/Saved/
+UnrealProject/.vs/
+UnrealProject/*.sln
+UnrealProject/*.suo
+UnrealProject/*.xcodeproj/
+UnrealProject/*.xcworkspace/
+
+# Содержимое Content/ — большие бинарники не коммитим.
+# Blueprint-снэпшоты кладём в Blueprints/ как текстовые экспорты.
+UnrealProject/Content/
+!UnrealProject/Content/.gitkeep
+
+# Исключения: .uproject, Source, Config коммитим
+!UnrealProject/*.uproject
+!UnrealProject/Source/
+!UnrealProject/Config/
+!UnrealProject/Plugins/
+
+# Плагины — только свои, сторонние игнорим
+UnrealProject/Plugins/*/Binaries/
+UnrealProject/Plugins/*/Intermediate/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- Secrets ----------
+.env
+.env.local
+*.key
+*.pem
+secrets.json
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Editors ----------
+.idea/
+.vscode/
+*.swp
+*~
+
+# ---------- Рендеры ----------
+# Не коммитим тяжёлые промежуточные секвенции
+renders/*.exr
+renders/*.png
+renders/*.mov
+# Но разрешаем финальные mp4-отчёты
+!renders/*.mp4
+
+# ---------- Аудио-кеш TTS ----------
+tools/dialogue_server/tts_cache/
