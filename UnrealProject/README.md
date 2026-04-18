@@ -2,11 +2,8 @@
 
 Сюда кладётся UE-проект `FireflyUE5.uproject` и всё, что с ним. Создание — по шагам из [../docs/UE_SETUP.md](../docs/UE_SETUP.md).
 
-Эта папка в основном в `.gitignore`: не коммитятся `Content/`, `Saved/`, `Intermediate/`, `Binaries/`, `DerivedDataCache/`. Коммитим только:
+В git коммитится **весь** UE-проект: `.uproject`, `Config/`, `Source/`, `Content/` (бинарники через Git LFS — см. [`../.gitattributes`](../.gitattributes)).
 
-- `*.uproject`
-- `Config/` — DefaultEngine.ini и т.д.
-- `Source/` — C++ модули (`DialogueClientComponent` и прочее).
-- `Plugins/FireflyUE5/` — если решите обернуть свой код как плагин.
+Не коммитятся только авто-генерируемые: `Intermediate/`, `Binaries/`, `Saved/`, `DerivedDataCache/`, `.vs/`, `*.sln`.
 
-Большие ассеты (MetaHuman, меши кораблика, анимации) хранятся локально или в отдельном LFS/CDN (см. UE_SETUP.md §6).
+На чистой машине: `scripts\generate_project_files.bat` → `scripts\build_editor.bat` — восстанавливает `.sln` и бинарники модуля из Source/.

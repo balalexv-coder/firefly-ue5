@@ -158,18 +158,19 @@ Content/
   - `DA_` — Data Asset.
   - `BT_` / `BB_` — Behavior Tree / Blackboard.
 
-## Что не стоит хранить в git
+## Что хранит git
 
-- Всё в `Content/` — мастер-ассеты тяжёлые. Храните локально, бэкапьте руками или в OneDrive.
-- `Saved/` — кеши, логи, автосейвы.
-- `Intermediate/`, `Binaries/`, `DerivedDataCache/` — пересобираемое.
+Коммитим **всё**: `.uproject`, `Source/`, `Config/`, `Plugins/`, и **всё `Content/`** (бинарники идут через Git LFS — см. [`.gitattributes`](../.gitattributes)).
 
-## Что в git хранить обязательно
+**Не коммитим** (авто-генерируется, в `.gitignore`):
+- `UnrealProject/Intermediate/` — результат сборки.
+- `UnrealProject/Binaries/` — DLL'ки модулей, пересобираются.
+- `UnrealProject/Saved/` — кеши, логи, автосейвы.
+- `UnrealProject/DerivedDataCache/` — шейдер/mesh-кеш.
+- `*.sln`, `.vs/` — генерируются `scripts/generate_project_files.bat`.
+- `Content/Collections/`, `Content/Developers/` — пользовательские закладки редактора.
 
-- `UnrealProject/*.uproject`
-- `UnrealProject/Source/` (C++ код)
-- `UnrealProject/Config/` (DefaultGame.ini, DefaultEngine.ini)
-- `UnrealProject/Plugins/FireflyUE5/Source/` — если пишите свой plugin.
+LFS tracks: `*.uasset *.umap *.fbx *.wav *.mp3 *.exr *.hdr *.png *.jpg *.tga *.psd *.blend *.ttf *.otf *.mov *.mp4 *.avi`.
 
 ## Migration tool
 

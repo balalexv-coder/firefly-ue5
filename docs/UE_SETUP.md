@@ -86,22 +86,11 @@ Edit → Project Settings:
 
 ### Git LFS
 
-Большие бинарники (.uasset, .umap) — через LFS. Иначе репо вырастет до гигабайтов и git будет медленным.
+Уже настроен в репо. Все бинарники (`.uasset`, `.umap`, `.fbx`, `.wav`, `.mp3`, `.exr`, `.hdr`, `.png`, `.jpg`, `.tga`, `.psd`, `.blend`, `.mov`, `.mp4`, шрифты) идут через LFS — см. [`.gitattributes`](../.gitattributes). Контент в `UnrealProject/Content/` коммитится целиком, исключения только авто-генерируемые (см. [`.gitignore`](../.gitignore)).
 
-1. Установить: `winget install Git.Git` уже включает LFS в новых версиях. Либо https://git-lfs.com.
-2. В корне репо:
-   ```bash
-   git lfs install
-   git lfs track "*.uasset"
-   git lfs track "*.umap"
-   git lfs track "*.wav"
-   git lfs track "*.mp3"
-   git lfs track "*.png"  # опционально — для crew текстур
-   git lfs track "*.exr"
-   ```
-3. `git add .gitattributes` — файл создаётся автоматически.
+На новой машине первый `git lfs install --local` уже прописан в hook'ах репо — клонирование подтянет LFS-объекты автоматически. Убедитесь, что установлен git-lfs: `git lfs version`.
 
-**Вариант на v0.1:** не коммитить Content/ вообще (см. `.gitignore`). Тогда LFS не нужен. Binary'и хранятся локально. Это ок, пока вы единственный разработчик.
+**Квоты GitHub LFS.** Бесплатный аккаунт = 1 GB storage + 1 GB/месяц bandwidth. MetaHuman-персонажи весят ~50–100 MB каждый (× 9), модульные паки — сотни мегабайт. Следите за лимитом; при превышении — купить data pack ($5 / 50 GB) или свой Git LFS-сервер.
 
 ## 7. Source control в UE
 
