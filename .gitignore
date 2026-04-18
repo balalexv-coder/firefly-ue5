@@ -65,3 +65,7 @@ renders/*.mov
 
 # ---------- Аудио-кеш TTS ----------
 tools/dialogue_server/tts_cache/
+
+# ---------- Dialogue server runtime ----------
+tools/dialogue_server/logs/
+tools/dialogue_server/.venv/
