@@ -1,6 +1,15 @@
 # Dialogue Server
 
-FastAPI-сервис, превращающий состояние разговора в реплики экипажа через Claude с tool-use / structured output. Используется Blueprint'ом `BP_CabinFlow` в UE5 как единственный источник реплик.
+FastAPI-сервис, генерирующий реплики экипажа структурированным JSON через LLM. Используется `BP_CabinFlow` в UE5 как единственный источник реплик.
+
+Поддерживает два backend'а (выбирается переменной `DIALOGUE_BACKEND`):
+
+| Backend | Когда | Стоимость | Качество |
+|---|---|---|---|
+| **ollama** (дефолт) | разработка, отладка, частые итерации | бесплатно, локально | хорошее (на qwen3.5:9b), без интернета |
+| **anthropic** | финальное демо, запись ролика | платно (~$0.01–0.05 / раунд) | pro, самый живой ролеплей |
+
+Для v0.1 разработки используем **Ollama**, потом переключаем `DIALOGUE_BACKEND=anthropic` одной строкой в `.env`.
 
 ---
 
@@ -10,83 +19,98 @@ FastAPI-сервис, превращающий состояние разгово
 cd tools/dialogue_server
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS/Linux
 pip install -r requirements.txt
-cp .env.example .env
-# отредактируйте .env: вставьте ANTHROPIC_API_KEY
+cp .env.example .env          # Windows: copy .env.example .env
 ```
+
+## Предусловия — Ollama
+
+Должен быть установлен и запущен Ollama (https://ollama.com). Проверить:
+```bash
+curl http://localhost:11434/api/tags
+```
+
+Рекомендованная модель для dev — `qwen3.5:9b`:
+```bash
+ollama pull qwen3.5:9b
+```
+
+Другие поддерживаемые варианты в [`.env.example`](.env.example).
 
 ## Запуск
 
 ```bash
 uvicorn server:app --reload --port 8765
+# или из PowerShell:
+.venv\Scripts\python -m uvicorn server:app --reload --port 8765
 ```
 
-Сервер поднимется на `http://127.0.0.1:8765`. Плюс:
-- Swagger UI: `http://127.0.0.1:8765/docs`
-- OpenAPI JSON: `http://127.0.0.1:8765/openapi.json`
+Сервер поднимется на `http://127.0.0.1:8765`. Swagger UI: `/docs`.
 
 ## Тест
-
-В отдельном терминале (с активированным venv):
 
 ```bash
 python test_client.py
 ```
 
-Выведется первая реплика Мала и три варианта ответа. 1/2/3 — выбор, `q` — выход.
+Выведется opener Мала + 3 варианта ответа. 1/2/3 — выбор, `q` — выход.
+
+## Переключение на Claude
+
+В `.env`:
+```
+DIALOGUE_BACKEND=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+DIALOGUE_MODEL=claude-opus-4-7
+```
+
+Рестартанули сервер — сразу работает без изменений кода/UE.
 
 ## Эндпойнты
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| GET  | `/health`  | проверка живости |
+| GET  | `/health`  | проверка живости (`{"status":"ok","backend":"ollama"}`) |
 | POST | `/start`   | новая сессия, opener + options |
 | POST | `/turn`    | основной — следующий раунд |
 | GET  | `/docs`    | Swagger UI |
 
-Контракты и пример JSON — в [../../docs/DIALOGUE_SYSTEM.md](../../docs/DIALOGUE_SYSTEM.md).
+Контракт JSON — в [`../../docs/DIALOGUE_SYSTEM.md`](../../docs/DIALOGUE_SYSTEM.md).
 
-## Модель и стоимость
+## Как это работает
 
-Настраивается в `.env`:
-
-- `DIALOGUE_MODEL=claude-opus-4-7` — лучший ролевой отыгрыш, ~10× дороже sonnet.
-- `DIALOGUE_MODEL=claude-sonnet-4-6` — дешевле, быстрее, чуть менее «живой» стиль.
-
-**Prompt caching** включён для system prompt (~2500 токенов). Кеш живёт 5 минут, сессия длится ~5–10 минут → кеш почти всегда горячий → cache-hit rate > 80%. Реальная стоимость раунда — в несколько раз ниже неоптимизированной.
+1. `system_prompt()` и `turn_schema()` готовятся в [`prompts.py`](prompts.py).
+2. Backend (Ollama или Anthropic) принимает `(system, user, schema)` и возвращает dict, **гарантированно** соответствующий схеме:
+   - **Ollama** — через `format: <JSON Schema>` параметр в `/api/chat` (feature появился в Ollama 0.5+). Qwen3.5 с `think: false`.
+   - **Anthropic** — через tool_use с `tool_choice={"type":"tool","name":"emit_turn"}`.
+3. Сервер нормализует (добавляет `audio_url: null` и estimated `duration_ms`), логирует в `logs/<session>.jsonl`, отдаёт клиенту.
 
 ## Логи
 
-Все запросы и ответы пишутся в `./logs/<session_id>.jsonl` — удобно смотреть, как ИИ вёл разговор и не фуерагил ли.
+`./logs/<session_id>.jsonl` — каждый раунд с request, raw-ответом LLM и нормализованным выходом. Смотреть как ИИ ведёт разговор, ловить артефакты.
 
-Сброс: `rm logs/*.jsonl`.
+```bash
+# Показать последний ответ
+tail -1 logs/*.jsonl | python -m json.tool
+```
 
-## TTS (future)
+## TTS (планируется)
 
-Текущая версия **не озвучивает реплики** — возвращает `audio_url: null`. Реплики UE либо читает тишиной с сабами, либо UE сам дёргает внешний TTS.
-
-Для интеграции TTS в сервер:
-1. В `server.py` добавить `/tts` роут.
-2. В `_normalize_output` — если `tts_enabled`, синтезировать каждую `line`, класть mp3 в `tts_cache/`, подставлять URL.
-3. Варианты провайдеров и voice mapping: [../../docs/LIP_SYNC.md](../../docs/LIP_SYNC.md).
+Текущая версия возвращает `audio_url: null` — без озвучки. Пайплайн TTS описан в [`../../docs/LIP_SYNC.md`](../../docs/LIP_SYNC.md).
 
 ## Частые проблемы
 
-### `ANTHROPIC_API_KEY is not set`
+### `requests.exceptions.ConnectionError: localhost:11434`
+Ollama не запущен. Запустить: `ollama serve`, или через Ollama app-tray.
 
-Не создан `.env` рядом с `server.py`, либо в нём пустая переменная.
+### `Ollama returned invalid JSON despite format schema`
+Версия Ollama < 0.5 — нет поддержки `format: <schema>`. Обновить: `winget upgrade Ollama.Ollama` или `curl -fsSL https://ollama.com/install.sh | sh`.
 
-### `LLM did not call emit_turn tool`
+### Qwen долго генерирует (5+ сек на раунд)
+Первый запрос после старта — модель грузится в VRAM (5–20 сек). Последующие — в разы быстрее, кеш горячий. Если всё равно медленно — модель не влезает в VRAM, свалилась на CPU. Проверить: `ollama ps`.
 
-Редко: модель ответила текстом вместо tool_call. Обычно следствие edge-case входа (очень странная история). Перезапустите раунд. Если повторяется — в `prompts.py → system_prompt` усилить требование к tool-use.
+### Ответы короткие / персонажи ошибаются
+Проверить что `DIALOGUE_TEMPERATURE=0.85` в `.env` (ниже — стерильно, выше — бред). Если на qwen3.5:9b стиль всё равно бедный — попробовать `qwen3.5:9b-q8_0` или переключиться на Anthropic.
 
-### Сервер возвращает 502 / LLM error
-
-- Проверьте ключ и баланс на [console.anthropic.com](https://console.anthropic.com).
-- Возможно rate limit — повторите через 5 сек.
-
-### UE не может достучаться до `localhost:8765`
-
-- Если UE в редакторе — работает `127.0.0.1`.
-- Если UE в билде, запущенном от другого пользователя — Firewall может блочить. Разрешить `uvicorn` в Windows Defender.
+### `LLM did not call emit_turn tool` (только Anthropic)
+Редкое — модель вернула текст вместо tool_call. Повторить запрос. Если повторяется — усилить требование в system_prompt.

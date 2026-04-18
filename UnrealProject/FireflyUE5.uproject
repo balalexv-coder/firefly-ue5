@@ -1,0 +1,35 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.7",
+	"Category": "",
+	"Description": "Firefly-inspired UE5 fan project: LLM-driven crew dialogue, orbital approach, cinematic landing, frontier town.",
+	"Modules": [
+		{
+			"Name": "FireflyUE5",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"CoreUObject",
+				"HTTP",
+				"Json",
+				"JsonUtilities",
+				"UMG",
+				"EnhancedInput"
+			]
+		}
+	],
+	"Plugins": [
+		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
+		{ "Name": "MetaHuman",                 "Enabled": true },
+		{ "Name": "MetaHumanAnimator",         "Enabled": true, "Optional": true },
+		{ "Name": "MovieRenderPipeline",       "Enabled": true },
+		{ "Name": "SequencerScripting",        "Enabled": true },
+		{ "Name": "Niagara",                   "Enabled": true },
+		{ "Name": "EnhancedInput",             "Enabled": true },
+		{ "Name": "PCG",                       "Enabled": true },
+		{ "Name": "LiveLink",                  "Enabled": true, "Optional": true },
+		{ "Name": "AppleARKitFaceSupport",     "Enabled": true, "Optional": true },
+		{ "Name": "QuixelBridge",              "Enabled": true, "Optional": true }
+	]
+}

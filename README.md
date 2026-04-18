@@ -31,6 +31,7 @@
 firefly-ue5/
 ├── README.md                — этот файл
 ├── docs/
+│   ├── WALKTHROUGH.md       — пошаговый чек-лист действий в UE-редакторе
 │   ├── PLAN.md              — полный план работ, 8 фаз
 │   ├── ARCHITECTURE.md      — техническая схема всей системы
 │   ├── CHARACTERS.md        — паспорта 9 членов экипажа
@@ -59,11 +60,15 @@ firefly-ue5/
 
 ## Быстрый старт
 
-1. **Клонируй** репо: `git clone git@github.com:balalexv-coder/firefly-ue5.git`
-2. **Прочитай** [`docs/PLAN.md`](docs/PLAN.md) — там общий маршрут.
-3. **Подними dialogue server** (инструкции в [`tools/dialogue_server/README.md`](tools/dialogue_server/README.md)).
-4. **Создай UE-проект** по [`docs/UE_SETUP.md`](docs/UE_SETUP.md) → `UnrealProject/`.
-5. Двигайся по фазам `PLAN.md`.
+1. **Клонируй** репо: `git clone https://github.com/balalexv-coder/firefly-ue5.git`
+2. **Прочитай** [`docs/PLAN.md`](docs/PLAN.md) — общий маршрут.
+3. **Подними dialogue server** (Ollama / `qwen3.5:9b` по умолчанию): `cd tools/dialogue_server && start_server.bat` (или `start_server.sh`). Проверка: `python test_client.py`.
+4. **Создай/открой UE-проект**: `UnrealProject/FireflyUE5.uproject` (Source/ и Config/ уже в репо).
+5. Дальше — [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md), по чек-боксам.
+
+## Backend LLM
+
+По умолчанию сервер работает на **Ollama + qwen3.5:9b** (бесплатно, локально). Для финального демо — переключение одной строкой в `.env` на `DIALOGUE_BACKEND=anthropic` (Claude). Подробнее — [`tools/dialogue_server/README.md`](tools/dialogue_server/README.md).
 
 ## Лицензия
 
