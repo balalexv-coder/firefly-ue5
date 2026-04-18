@@ -1,6 +1,6 @@
 // Copyright (c) 2026 balalexv. MIT License.
 
-#include "DialogueClientComponent.h"
+#include "Dialogue/DialogueClientComponent.h"
 #include "FireflyUE5.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 balalexv. MIT License.
 
-#include "SeatActor.h"
+#include "Crew/SeatActor.h"
 #include "FireflyUE5.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SceneComponent.h"

@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Interfaces/IHttpRequest.h"
-#include "DialogueTypes.h"
+#include "Dialogue/FireflyDialogueTypes.h"
 #include "DialogueClientComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDialogueSessionStarted, const FDialogueTurn&, Opener);

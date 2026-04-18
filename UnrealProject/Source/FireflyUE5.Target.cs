@@ -8,7 +8,7 @@ public class FireflyUE5Target : TargetRules
 	public FireflyUE5Target(TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Game;
-		DefaultBuildSettings = BuildSettingsVersion.V5;
+		DefaultBuildSettings = BuildSettingsVersion.V6;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("FireflyUE5");
 	}

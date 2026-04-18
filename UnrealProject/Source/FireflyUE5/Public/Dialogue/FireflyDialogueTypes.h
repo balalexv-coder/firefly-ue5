@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
-#include "DialogueTypes.generated.h"
+#include "FireflyDialogueTypes.generated.h"
 
 /** Одна реплика (от экипажа или игрока). */
 USTRUCT(BlueprintType)

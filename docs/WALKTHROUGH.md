@@ -20,14 +20,17 @@
 
 ### 0.2 Инициализация проекта
 
-У вас уже есть в репозитории `UnrealProject/FireflyUE5.uproject` и `UnrealProject/Source/` — при первом открытии UE соберёт C++ модуль сам.
+Автоматизировано через скрипты в [`scripts/`](../scripts/). После свежего клона:
 
-- [ ] Right-click на `UnrealProject/FireflyUE5.uproject` → **Generate Visual Studio project files**.
-- [ ] Открыть `FireflyUE5.sln` в **Visual Studio 2022** (workload «Game development with C++» должен быть установлен).
-- [ ] Build configuration: **Development Editor** / platform **Win64** → **Build**.
-- [ ] Двойной клик `FireflyUE5.uproject` — редактор запустится.
+```
+scripts\generate_project_files.bat   # .sln под VS
+scripts\build_editor.bat             # сборка C++ модуля (Development Editor / Win64)
+scripts\init_project.bat             # headless UE: создать Content/ структуру + 5 карт + BP_FireflyGameMode/Player
+```
 
-При первом запуске UE спросит про отсутствующие default assets: создайте `L_Main.umap` (пустой уровень, Save As → `Content/Levels/L_Main`). Если редактор создаст дефолтную сцену ThirdPerson — её содержимое потом перетащите в `Content/Prototype/`.
+После — **двойной клик** на `UnrealProject/FireflyUE5.uproject`: редактор откроется, папки Content/ уже готовы, L_Main как стартовая карта, все нужные Blueprint'ы созданы.
+
+Если что-то упало — проверьте, что UE 5.7 лежит по пути `C:\Program Files\Epic Games\UE_5.7\`. Если другой — отредактируйте переменные в `scripts/*.bat`.
 
 ### 0.3 Плагины
 

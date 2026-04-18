@@ -12,7 +12,10 @@ UnrealProject/*.xcworkspace/
 
 # Содержимое Content/ — большие бинарники не коммитим.
 # Blueprint-снэпшоты кладём в Blueprints/ как текстовые экспорты.
-UnrealProject/Content/
+UnrealProject/Content/**
+# Но Python-скрипты проекта (init, retargeter, etc) коммитим — они текстовые.
+!UnrealProject/Content/Python/
+!UnrealProject/Content/Python/**/*.py
 !UnrealProject/Content/.gitkeep
 
 # Исключения: .uproject, Source, Config коммитим
