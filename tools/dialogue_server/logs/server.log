@@ -1,0 +1,10 @@
+2026-04-18 14:41:28,143 INFO dialogue_server dialogue backend=ollama
+INFO:     Started server process [32648]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
+INFO:     127.0.0.1:61631 - "GET /health HTTP/1.1" 200 OK
+2026-04-18 14:41:51,312 INFO dialogue_server start session=sess_d556b68ad6ab
+INFO:     127.0.0.1:61683 - "POST /start HTTP/1.1" 200 OK
+2026-04-18 14:42:01,071 INFO dialogue_server turn session=sess_d556b68ad6ab history=2 progress=0.00 choice="What's the cargo load?"
+INFO:     127.0.0.1:61683 - "POST /turn HTTP/1.1" 200 OK
