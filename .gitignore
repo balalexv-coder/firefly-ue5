@@ -23,6 +23,14 @@ UnrealProject/Content/Sketchfab/
 # Fab marketplace ассеты (если появятся) — тоже локально
 UnrealProject/Content/Fab/
 
+# Third Person template content — восстанавливается за один клик через
+# Content Browser → +Add → Add Feature or Content Pack → Third Person.
+# Не коммитим, чтоб экономить LFS квоту (~130 MB).
+UnrealProject/Content/Characters/
+UnrealProject/Content/ThirdPerson/
+UnrealProject/Content/LevelPrototyping/
+UnrealProject/Content/Input/
+
 # Исключения: .uproject, Source, Config коммитим
 !UnrealProject/*.uproject
 !UnrealProject/Source/
