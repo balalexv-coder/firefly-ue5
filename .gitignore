@@ -15,6 +15,14 @@ UnrealProject/*.xcworkspace/
 UnrealProject/Content/Collections/
 UnrealProject/Content/Developers/
 
+# Тяжёлые мигрированные ассеты (держим локально, не через LFS — экономим квоту):
+# MetaHumans мигрируются из C:\Users\balal\Assets (см. docs/ASSETS_SOURCES.md)
+UnrealProject/Content/MetaHumans/
+# Sketchfab модели — мигрированы из того же места
+UnrealProject/Content/Sketchfab/
+# Fab marketplace ассеты (если появятся) — тоже локально
+UnrealProject/Content/Fab/
+
 # Исключения: .uproject, Source, Config коммитим
 !UnrealProject/*.uproject
 !UnrealProject/Source/
