@@ -105,6 +105,41 @@ Cut to medium close-up Мала. Он первый говорит — старт
 
 ---
 
+## Рассадка — текущая AAA-итерация (4 персонажа)
+
+Сокращённая рассадка на время AAA-прохода: **Mal + Zoe + Wash + Inara**. Остальные определения сохранены, но выключены через `ACTIVE_KEYS` в `tools/dialogue_server/characters.py` (см. [CHARACTERS.md](CHARACTERS.md)).
+
+**Геометрия стола:** прямоугольный, длинная ось вдоль **+X** в мире. Мэл — в торце на **-X** стороне, остальные три — по длинным сторонам.
+
+### Координаты (source of truth для L_SerenityCabin)
+
+| Actor              | Location (X, Y, Z) | Rotation Yaw | Faces (world dir) | Где сидит |
+|--------------------|:------------------:|:------------:|:-----------------:|-----------|
+| `Mal_MetaHuman`    | (-220, 10, 0)      | -90°         | +X                | Торец стола (голова) |
+| `BP_Zoe`           | (-60, -90, 0)      | 0°           | +Y                | Левая длинная сторона (Mal's left) |
+| `BP_Wash`          | (-60, 110, 0)      | 180°         | -Y                | Правая длинная сторона, ближе к Мэлу, напротив Zoe |
+| `BP_Inara`         | (100, 110, 0)      | 180°         | -Y                | Правая длинная сторона, дальше от Мэла |
+
+**Convention reminder:** MetaHuman наследует skeleton forward = +Y (как SK_Mannequin), поэтому Yaw=-90° → faces +X, Yaw=0° → +Y, Yaw=180° → -Y, Yaw=+90° → -X.
+
+### Top-down schematic
+
+```
+   (-Y)                          (+Y)
+    │                              │
+    │                              │
+    │   [Zoe]─────→(faces +Y)      │
+    │                              │
+  ──┼──────[TABLE long axis X]────┼──
+    │                              │
+    │       (faces -Y)←──[Wash]   [Inara]
+    │                              │
+
+  [Mal] ──→ (faces +X, head of table at X=-220)
+```
+
+Parking for placeholder Manny (из risk spike): `SKM_Manny_Simple` отодвинут в сторону, не удалён — полезен для тестов когда Mal-only недостаточно. Можно безопасно удалить когда Foot IK и ABP state machine стабилизируются.
+
 ## Карта камер в кают-компании
 
 ```

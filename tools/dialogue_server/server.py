@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from backends import make_backend
-from characters import CHARACTER_KEYS
+from characters import ACTIVE_CHARACTER_KEYS
 from prompts import (
     opener_instruction,
     opener_schema,
@@ -177,7 +177,7 @@ def start(_: StartRequest) -> StartResponse:
 
 @app.post("/turn")
 def turn(req: TurnRequest) -> dict[str, Any]:
-    valid_speakers = set(CHARACTER_KEYS) | {"player"}
+    valid_speakers = set(ACTIVE_CHARACTER_KEYS) | {"player"}
     for t in req.history:
         if t.speaker not in valid_speakers:
             raise HTTPException(

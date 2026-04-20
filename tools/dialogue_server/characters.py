@@ -145,13 +145,39 @@ CREW: list[Character] = [
 ]
 
 
-CHARACTER_KEYS = [c.key for c in CREW]  # enum values for tool schema
+CHARACTER_KEYS = [c.key for c in CREW]  # enum values for tool schema (all 9)
+
+
+# ---------------------------------------------------------------------------
+# Active cast filter
+#
+# Scope был 9 персонажей. Текущая AAA-итерация делает сцену на 4 MetaHuman'ах
+# (Mal/Zoe/Wash/Inara), остальные — отключены, но определения сохранены в CREW
+# для лёгкого возврата (Kaylee/Jayne/Simon/River/Book). Все потребители
+# (prompts.py, server.py) должны импортировать ACTIVE_CHARACTER_KEYS и
+# active_characters_block(), не CHARACTER_KEYS / characters_block().
+# ---------------------------------------------------------------------------
+
+ACTIVE_KEYS: frozenset[str] = frozenset({"Mal", "Zoe", "Wash", "Inara"})
+
+ACTIVE_CREW: list[Character] = [c for c in CREW if c.key in ACTIVE_KEYS]
+ACTIVE_CHARACTER_KEYS: list[str] = [c.key for c in ACTIVE_CREW]
 
 
 def characters_block() -> str:
-    """Отформатированный блок персонажей для system prompt."""
+    """[legacy] Отформатированный блок ВСЕХ 9 персонажей. Не для prompts."""
     lines = []
     for c in CREW:
+        lines.append(f"--- {c.name} ({c.key}) — {c.role} ---")
+        lines.append(c.persona)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def active_characters_block() -> str:
+    """Блок только активных персонажей (для system prompt сейчас)."""
+    lines = []
+    for c in ACTIVE_CREW:
         lines.append(f"--- {c.name} ({c.key}) — {c.role} ---")
         lines.append(c.persona)
         lines.append("")

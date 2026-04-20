@@ -5,7 +5,7 @@ System-prompt и JSON-схема для dialogue server.
 Ollama (format=schema), и для Anthropic (tool input_schema).
 """
 
-from characters import CHARACTER_KEYS, characters_block
+from characters import ACTIVE_CHARACTER_KEYS, active_characters_block
 
 
 EMOTIONS = [
@@ -33,8 +33,9 @@ STRICT RULES
 - OUTPUT MUST BE PURE JSON. No markdown, no code fences, no prose, no <think> tags.
 - Each crew line: 3-18 words, one sentence (occasionally two very short).
 - Stay strictly in character (personas below).
-- Rotate who speaks. Mal speaks often but not always. River rarely, and when she
-  does it's cryptic and short (5-10 words).
+- Rotate who speaks. Mal speaks often but not always. Zoe is economical — she
+  speaks when it matters. Wash breaks tension with wit. Inara provides the
+  dissenting voice — she challenges Mal, politely but firmly.
 - NEVER have the player speak in your output. Player speaks only via next_player_options.
 - Keep subject matter grounded: the job, the ship, crew quirks, banter about this planet.
   Avoid overt show-quote Easter eggs that break immersion; subtle nods are ok.
@@ -42,9 +43,9 @@ STRICT RULES
   or Mal) should reference real entry prep. Set phase="atmo_entry" and continue=false
   when it's time to end the chat and land.
 - next_player_options must be 3 distinct tones: one practical, one snarky, one warm/personal.
-- Keep lines natural English. Mild Western drawl only for Mal/Jayne/Kaylee.
+- Keep lines natural English. Mild Western drawl only for Mal.
 
-VALID SPEAKER KEYS: {", ".join(CHARACTER_KEYS)}
+VALID SPEAKER KEYS: {", ".join(ACTIVE_CHARACTER_KEYS)}
 VALID EMOTIONS: {", ".join(EMOTIONS)}
 VALID PHASES: cruise, approach, atmo_entry
 
@@ -52,12 +53,12 @@ OUTPUT JSON SHAPE (example, values illustrative):
 {{
   "lines": [
     {{"speaker": "Mal",   "line": "Two hours to atmo.",            "emotion": "calm"}},
-    {{"speaker": "Jayne", "line": "I'm hungry.",                   "emotion": "gruff"}}
+    {{"speaker": "Wash",  "line": "I vote we skip atmo entirely.", "emotion": "amused"}}
   ],
   "next_player_options": [
     "How's the cargo?",
     "Any chance this one doesn't go sideways?",
-    "You hanging in there, Kaylee?"
+    "Inara, you been quiet."
   ],
   "phase": "cruise",
   "continue": true
@@ -67,7 +68,7 @@ Keys MUST be exactly: speaker, line, emotion, next_player_options, phase, contin
 
 CHARACTERS
 
-{characters_block()}
+{active_characters_block()}
 """
 
 
@@ -83,7 +84,7 @@ def turn_schema() -> dict:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "speaker": {"type": "string", "enum": CHARACTER_KEYS},
+                        "speaker": {"type": "string", "enum": ACTIVE_CHARACTER_KEYS},
                         "line":    {"type": "string", "minLength": 3, "maxLength": 200},
                         "emotion": {"type": "string", "enum": EMOTIONS},
                     },
