@@ -7,3 +7,7 @@ requests==2.32.3
 # Optional: Anthropic Claude (DIALOGUE_BACKEND=anthropic).
 # Not required for local Ollama dev, but harmless to have installed.
 anthropic==0.42.0
+
+# TTS: Microsoft Edge's neural TTS via free public endpoint.
+# Internet required but no API key. Used for prototype voice playback.
+edge-tts==7.2.8

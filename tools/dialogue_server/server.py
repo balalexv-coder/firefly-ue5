@@ -22,6 +22,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backends import make_backend
@@ -33,6 +34,7 @@ from prompts import (
     turn_instruction,
     turn_schema,
 )
+from tts import make_tts_backend
 
 
 load_dotenv()
@@ -45,8 +47,14 @@ log = logging.getLogger("dialogue_server")
 LOG_DIR = Path(os.getenv("LOG_DIR", "./logs"))
 LOG_DIR.mkdir(exist_ok=True)
 
+AUDIO_DIR = Path(os.getenv("AUDIO_DIR", "./audio"))
+AUDIO_DIR.mkdir(exist_ok=True)
+
 backend = make_backend()
 log.info("dialogue backend=%s", backend.name)
+
+tts_backend = make_tts_backend()
+log.info("tts backend=%s", tts_backend.name)
 
 
 # ---------- Models ----------
@@ -137,14 +145,52 @@ def _log_turn(session_id: str, kind: str, payload: dict[str, Any]) -> None:
         f.write(json.dumps({"kind": kind, "payload": payload}, ensure_ascii=False) + "\n")
 
 
+def _synthesize_audio(lines: list[dict[str, Any]], session_id: str, turn_tag: str) -> None:
+    """
+    Для каждой реплики синтезирует MP3 и проставляет `audio_url` в словарь.
+    Ошибки TTS — логируются, но не падают endpoint (graceful degradation).
+
+    Имя файла: <session_id>/<turn_tag>_<idx>_<speaker>.mp3 внутри AUDIO_DIR.
+    audio_url возвращается относительным: /audio/<session_id>/<filename>
+    """
+    if tts_backend.name == "null":
+        return  # TTS disabled
+
+    session_dir = AUDIO_DIR / session_id
+    for idx, line in enumerate(lines):
+        try:
+            stem = f"{turn_tag}_{idx:02d}_{line['speaker']}"
+            mp3_path = tts_backend.synthesize(
+                text=line["line"],
+                character_key=line["speaker"],
+                output_dir=session_dir,
+                stem=stem,
+            )
+            # Relative URL that the client can GET from the static mount.
+            rel = mp3_path.relative_to(AUDIO_DIR)
+            line["audio_url"] = f"/audio/{rel.as_posix()}"
+        except Exception as e:
+            log.warning("TTS failed for line %d (%s): %s", idx, line["speaker"], e)
+            # audio_url stays None
+
+
+def _start_audio_dir(session_id: str) -> None:
+    """Подготовить поддиректорию для аудио сессии (создаётся автоматом при synth,
+    но оставляем явный helper если захотим preflight)."""
+    (AUDIO_DIR / session_id).mkdir(parents=True, exist_ok=True)
+
+
 # ---------- API ----------
 
-app = FastAPI(title="Firefly Dialogue Server", version="0.2.0")
+app = FastAPI(title="Firefly Dialogue Server", version="0.3.0")
+
+# Serve synthesized MP3s as static files under /audio/<session>/<file>.mp3
+app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "backend": backend.name}
+    return {"status": "ok", "backend": backend.name, "tts": tts_backend.name}
 
 
 @app.post("/start", response_model=StartResponse)
@@ -163,6 +209,8 @@ def start(_: StartRequest) -> StartResponse:
     data = _normalize(raw)
     if not data["lines"]:
         raise HTTPException(status_code=500, detail="Backend returned no opener line.")
+
+    _synthesize_audio(data["lines"], session_id=session_id, turn_tag="start")
 
     _log_turn(session_id, "start", {"raw": raw, "normalized": data})
 
@@ -197,6 +245,10 @@ def turn(req: TurnRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Backend error: {e}") from e
 
     data = _normalize(raw)
+
+    turn_tag = f"turn_{len(req.history):03d}"
+    _synthesize_audio(data["lines"], session_id=req.session_id, turn_tag=turn_tag)
+
     _log_turn(req.session_id, "turn", {
         "request": req.model_dump(),
         "raw": raw,

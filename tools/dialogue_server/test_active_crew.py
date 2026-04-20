@@ -18,8 +18,12 @@ Smoke-test: dialogue server сужен с 9 до 4 активных.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
+
+# Отключаем TTS в тесте (не нужен интернет для mock-проверок)
+os.environ["TTS_BACKEND"] = "none"
 
 # ------- Подменяем make_backend ДО импорта server -------
 

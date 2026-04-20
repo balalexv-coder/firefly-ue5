@@ -81,7 +81,11 @@ renders/*.mov
 
 # ---------- Аудио-кеш TTS ----------
 tools/dialogue_server/tts_cache/
+tools/dialogue_server/audio/
+tools/dialogue_server/audio_test_direct/
+tools/dialogue_server/audio_test_e2e/
 
 # ---------- Dialogue server runtime ----------
 tools/dialogue_server/logs/
 tools/dialogue_server/.venv/
+tools/dialogue_server/__pycache__/
