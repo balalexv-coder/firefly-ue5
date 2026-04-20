@@ -1,12 +1,36 @@
 # 04. ABP_Crew — Listener LookAt IK (голова трекает цель)
 
-**Дата:** 2026-04-20. **UE версия:** 5.7.4.
+**Дата:** 2026-04-20…21. **UE версия:** 5.7.4.
 
 ## Цель
 
 Добавить в `ABP_Crew` постобработку: **bone `head` поворачивается к заданной мировой точке**. Цель задаётся извне через public FVector переменную — в будущем `BP_DialogueManager` будет ставить её на координату головы текущего спикера для всех слушателей.
 
 Итог: слушатели поворачивают голову на говорящего. Если цель (0,0,0) — голова смотрит вперёд (neutral).
+
+## Статус (последняя итерация)
+
+**Частично работает, с оговорками.** Потратили ~4 часа на отладку bone-axis issues (hallmark UE Mannequin + Mixamo retargeted animation gotcha). Ссылки на обсуждение: [форум-тред UE 5.4.1 auto retargeting head down](https://forums.unrealengine.com/t/ue-5-4-1-auto-retargeting-issue-mixamo-char-head-down/1864768) (community без accepted solution), [InformIT head IK (90,-90,0 compensation)](https://www.informit.com/articles/article.aspx?p=2767093&seqNum=2).
+
+**Финальный config в ABP_Crew:**
+
+| Параметр | Значение |
+|----------|----------|
+| Bone to Modify | `head` |
+| Look at Axis → Axis | `(0, 0, 1)` |
+| Look at Axis → In Local Space | ON |
+| Use Look Up Axis | ON |
+| Look Up Axis → Axis | `(1, 0, 0)` |
+| Look Up Axis → In Local Space | ON |
+| Look at Clamp | 70 |
+| Interpolation Type | Ease in Out Exponent 2 |
+| Interpolation Time | 0.25 |
+| **Alpha** | `1.0` (literal, **НЕ** в режиме Pin/Dynamic — иначе UE ставит 0 и вся нода выключается) |
+| Look at Location | связан pin'ом с `HeadTargetCS` (Component Space переменная) |
+
+**Критическое gotcha:** `Alpha` по дефолту может быть в режиме «Pin» или «Dynamic» — оба означают что значение берётся извне или пересчитывается каждый кадр. Если pin не подключён / dynamic не забинжена, UE считает Alpha = 0 и вся нода Look At **silently не применяется** к pose. Проверяй чтобы Alpha была литеральной `1.0`: кликни dropdown справа от Alpha → сними галки «Expose As Pin» и «Dynamic Value» → поле должно превратиться в простое числовое. Это одна из главных причин почему «никакой axis не работает» — сама нода выключена.
+
+**Качество результата:** head tracking работает но не идеально — угол поворота может быть не точным, возможно есть вертикальный drift. Для v1 dialogue-сцены с 4 персонажами за столом — приемлемо. Для AAA-polish — нужен Control Rig + Aim Constraint (iteration 2, отдельный runbook).
 
 ## Пререквизиты
 
