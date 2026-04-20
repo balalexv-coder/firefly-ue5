@@ -20,16 +20,68 @@
 		}
 	],
 	"Plugins": [
-		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
-		{ "Name": "MetaHuman",                 "Enabled": true },
-		{ "Name": "MetaHumanAnimator",         "Enabled": true, "Optional": true },
-		{ "Name": "MovieRenderPipeline",       "Enabled": true },
-		{ "Name": "SequencerScripting",        "Enabled": true },
-		{ "Name": "Niagara",                   "Enabled": true },
-		{ "Name": "EnhancedInput",             "Enabled": true },
-		{ "Name": "PCG",                       "Enabled": true },
-		{ "Name": "LiveLink",                  "Enabled": true, "Optional": true },
-		{ "Name": "AppleARKitFaceSupport",     "Enabled": true, "Optional": true },
-		{ "Name": "QuixelBridge",              "Enabled": true, "Optional": true }
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true
+		},
+		{
+			"Name": "MetaHuman",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Linux"
+			]
+		},
+		{
+			"Name": "MetaHumanAnimator",
+			"Enabled": true,
+			"Optional": true
+		},
+		{
+			"Name": "MovieRenderPipeline",
+			"Enabled": true
+		},
+		{
+			"Name": "SequencerScripting",
+			"Enabled": true
+		},
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		},
+		{
+			"Name": "PCG",
+			"Enabled": true
+		},
+		{
+			"Name": "LiveLink",
+			"Enabled": true,
+			"Optional": true
+		},
+		{
+			"Name": "AppleARKitFaceSupport",
+			"Enabled": true,
+			"Optional": true,
+			"SupportedTargetPlatforms": [
+				"IOS",
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android"
+			]
+		},
+		{
+			"Name": "QuixelBridge",
+			"Enabled": true,
+			"Optional": true
+		},
+		{
+			"Name": "LiveLinkControlRig",
+			"Enabled": true
+		}
 	]
 }
