@@ -22,3 +22,4 @@
 
 - [01_mixamo_to_ue_mannequin_retarget.md](01_mixamo_to_ue_mannequin_retarget.md) — ретаргет Mixamo sitting-анимаций на UE5 Mannequin через IK Retargeter.
 - [02_metahuman_creator_via_bridge.md](02_metahuman_creator_via_bridge.md) — создание и импорт MetaHuman через Quixel Bridge внутри UE (надёжнее чем web Creator в 2026).
+- [03_abp_crew_idle_talking_state_machine.md](03_abp_crew_idle_talking_state_machine.md) — state machine в ABP_Crew: переключение Idle ↔ Talking через bool `IsSpeaking`.
