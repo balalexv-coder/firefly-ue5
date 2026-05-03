@@ -86,6 +86,11 @@ tools/dialogue_server/audio_test_direct/
 tools/dialogue_server/audio_test_e2e/
 tools/dialogue_server/audio_test_wav/
 
+# ---------- Сгенерированные UE ассеты (firefly_face_pipeline) ----------
+# Performance / AnimSequence ассеты генерятся автоматически из WAV;
+# держим локально, не коммитим — иначе репо разрастётся.
+UnrealProject/Content/Audio/Dialogue/Generated/
+
 # ---------- Dialogue server runtime ----------
 tools/dialogue_server/logs/
 tools/dialogue_server/.venv/

@@ -117,7 +117,49 @@ Skeleton автоматически выставляется в `Face_Archetype_
 
 Решается в Step 6D (UE runtime playback из dialogue server'а).
 
-## Артефакты в репо
+## Step 6C — автоматизация (headless pipeline)
+
+Шаги 1-7 выше — ручные, для одной реплики. Для каждой реплики экипажа делать руками — нереально. Автоматизировано через UE-Cmd headless Python.
+
+### Артефакты:
+- **`UnrealProject/Content/Python/firefly_face_pipeline.py`** — UE Python скрипт. Принимает env vars `FIREFLY_WAV` (абс. путь к WAV), `FIREFLY_CHAR` (Mal/Zoe/Wash/Inara), `FIREFLY_LINE_ID` (опц., default = WAV stem), `FIREFLY_OVERWRITE` (опц., 1=перезапись). Выполняет: импорт WAV → Performance → Process → Export AnimSequence → save.
+- **`scripts/process_face_audio.bat`** — Windows wrapper. Запускает UnrealEditor-Cmd headless с правильными аргументами.
+
+### CLI usage:
+```cmd
+scripts\process_face_audio.bat WAV_PATH CHARACTER [LINE_ID] [--overwrite]
+
+REM Examples:
+scripts\process_face_audio.bat "C:\path\mal.wav" Mal
+scripts\process_face_audio.bat "C:\path\mal.wav" Mal demo_long
+scripts\process_face_audio.bat "C:\path\mal.wav" Mal demo_long --overwrite
+```
+
+### Что создаётся:
+```
+/Game/Audio/Dialogue/Generated/<CHAR>/<LINE_ID>/
+    <line_id>.uasset                  # SoundWave (импортированный WAV)
+    MHP_<line_id>.uasset              # MetaHuman Performance asset
+    A_<CHAR>_<line_id>_Lipsync.uasset # AnimSequence на Face_Archetype_Skeleton
+```
+
+### Время:
+~45 секунд на реплику (15 сек startup UE + 14 сек Process на 16-сек WAV + ~15 сек I/O/save).
+
+### Gotcha при разработке:
+- **UE редактор должен быть закрыт** — UE-Cmd не может одновременно с открытым редактором держать `.uproject` lock.
+- **Quoting в `-script="..."`**: на Windows UnrealEditor-Cmd корявит quoted args через `-script="path script.py --arg val"` (теряет значение после `--arg`). Решение — env vars `FIREFLY_*`, обходят этот баг.
+- **`.bat` файл — pure ASCII**, никакой Cyrillic/UTF-8/em-dash в комментариях. CMD ломается на не-ASCII.
+
+### Built-in Epic API референсы (откуда брал паттерны):
+- `{UE 5.7}/Engine/Plugins/MetaHuman/MetaHumanAnimator/Content/Python/process_audio_performance.py` — пример создания Performance из SoundWave
+- `{UE 5.7}/.../Python/process_performance.py` — пример `start_pipeline()` blocking
+- `{UE 5.7}/.../Python/export_performance.py` — пример `export_animation_sequence()` без UI
+
+### Generated артефакты — НЕ коммитим
+`/Game/Audio/Dialogue/Generated/` в `.gitignore`. Регенерится автоматически из WAV.
+
+## Артефакты в репо (manual Step 6B)
 
 - `UnrealProject/Content/Audio/Dialogue/Test/mal_demo_long.wav` — source WAV (16 sec, "Two hours to atmo, folks…")
 - `UnrealProject/Content/Audio/Dialogue/Test/mal_demo_long.uasset` — SoundWave
