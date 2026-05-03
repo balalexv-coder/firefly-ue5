@@ -7,9 +7,15 @@ firefly_face_pipeline — авто-пайплайн "WAV → MetaHuman face Anim
   2. Создаёт MetaHuman Performance asset (`MHP_<stem>`) c Input Type = Audio,
      ссылается на этот SoundWave.
   3. Запускает блокирующий Process (start_pipeline) — генерация face curves.
-  4. Экспортит Animation Sequence (`A_<stem>_Lipsync`) на Face_Archetype_Skeleton,
-     без UI диалога.
+  4. Экспортит Animation Sequence (`A_<character>_<stem>_Lipsync`) на
+     Face_Archetype_Skeleton, без UI диалога.
   5. Сохраняет все ассеты на диск.
+
+Level Sequence НЕ генерится автоматически (попытка через Epic's
+export_level_sequence создавала Spawnable Mal — упирался в memory limit на
+runtime, текстуры MetaHuman ~4.5 GB). Per-line LS-ы создаём вручную в
+редакторе на основе template'а LS_Test_Mal_Lipsync — копируем, swap'аем
+audio + anim ссылки. См. docs/runbooks/05_metahuman_audio_driven_face.md.
 
 Идемпотентно: повторный запуск с тем же stem перезаписывает ассеты (если флаг
 overwrite=True), либо пропускает если ассет существует.
@@ -211,7 +217,10 @@ def export_anim_sequence(
         )
     settings.target_skeleton_or_skeletal_mesh = skeleton
 
-    settings.enable_head_movement = True
+    # head_movement=False: не баковать head bone translations в curves —
+    # для slot/montage playback это вызывает отрыв Face mesh от Body. Для
+    # Sequencer-based воспроизведения это тоже безопаснее.
+    settings.enable_head_movement = False
     settings.export_range = unreal.PerformanceExportRange.PROCESSING_RANGE
 
     anim_seq = unreal.MetaHumanPerformanceExportUtils.export_animation_sequence(
