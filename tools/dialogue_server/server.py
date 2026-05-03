@@ -147,10 +147,11 @@ def _log_turn(session_id: str, kind: str, payload: dict[str, Any]) -> None:
 
 def _synthesize_audio(lines: list[dict[str, Any]], session_id: str, turn_tag: str) -> None:
     """
-    Для каждой реплики синтезирует MP3 и проставляет `audio_url` в словарь.
+    Для каждой реплики синтезирует аудио (MP3 или WAV — зависит от backend.output_format)
+    и проставляет `audio_url` в словарь.
     Ошибки TTS — логируются, но не падают endpoint (graceful degradation).
 
-    Имя файла: <session_id>/<turn_tag>_<idx>_<speaker>.mp3 внутри AUDIO_DIR.
+    Имя файла: <session_id>/<turn_tag>_<idx>_<speaker>.{mp3|wav} внутри AUDIO_DIR.
     audio_url возвращается относительным: /audio/<session_id>/<filename>
     """
     if tts_backend.name == "null":
@@ -160,14 +161,14 @@ def _synthesize_audio(lines: list[dict[str, Any]], session_id: str, turn_tag: st
     for idx, line in enumerate(lines):
         try:
             stem = f"{turn_tag}_{idx:02d}_{line['speaker']}"
-            mp3_path = tts_backend.synthesize(
+            audio_path = tts_backend.synthesize(
                 text=line["line"],
                 character_key=line["speaker"],
                 output_dir=session_dir,
                 stem=stem,
             )
             # Relative URL that the client can GET from the static mount.
-            rel = mp3_path.relative_to(AUDIO_DIR)
+            rel = audio_path.relative_to(AUDIO_DIR)
             line["audio_url"] = f"/audio/{rel.as_posix()}"
         except Exception as e:
             log.warning("TTS failed for line %d (%s): %s", idx, line["speaker"], e)
@@ -184,7 +185,7 @@ def _start_audio_dir(session_id: str) -> None:
 
 app = FastAPI(title="Firefly Dialogue Server", version="0.3.0")
 
-# Serve synthesized MP3s as static files under /audio/<session>/<file>.mp3
+# Serve synthesized audio (MP3 or WAV) as static files under /audio/<session>/<file>.<ext>
 app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
 
 

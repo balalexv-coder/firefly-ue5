@@ -84,6 +84,7 @@ tools/dialogue_server/tts_cache/
 tools/dialogue_server/audio/
 tools/dialogue_server/audio_test_direct/
 tools/dialogue_server/audio_test_e2e/
+tools/dialogue_server/audio_test_wav/
 
 # ---------- Dialogue server runtime ----------
 tools/dialogue_server/logs/

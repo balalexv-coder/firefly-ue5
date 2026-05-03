@@ -8,8 +8,13 @@ TTS backends для озвучки реплик экипажа.
 
 Интерфейс:
     backend = make_tts_backend()
-    mp3_path = backend.synthesize(text, character_key, output_dir)
-    # → Path к MP3 файлу на диске
+    audio_path = backend.synthesize(text, character_key, output_dir)
+    # → Path к MP3 (по дефолту) либо WAV (если TTS_OUTPUT_FORMAT=wav)
+
+Output format:
+    - mp3 (default) — нативный edge-tts output, идеален для прослушивания.
+    - wav — конвертится через ffmpeg в 22050 Hz mono 16-bit PCM
+            (UE-friendly для MetaHuman Performance audio-driven animation).
 
 Пока что — заглушка на 2 голоса:
     - Male характеры (Mal, Wash) → en-US-GuyNeural
@@ -25,11 +30,27 @@ import asyncio
 import logging
 import os
 import re
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 log = logging.getLogger("dialogue_server.tts")
+
+# Audio output formats supported by EdgeTTSBackend.
+# - "mp3": native edge-tts output (24 kHz, 48 kbit/s mono).
+# - "wav": ffmpeg-converted from MP3 (22050 Hz, mono, 16-bit PCM —
+#          UE-recommended for MetaHuman Performance audio import).
+OutputFormat = Literal["mp3", "wav"]
+
+# UE-friendly WAV target — 22050 Hz, mono, 16-bit PCM.
+# (UE supports any sample rate but recommends 44100 or 22050; 22050 keeps file
+# size reasonable and is plenty for speech. MetaHuman Audio-Driven Animation
+# resamples internally regardless.)
+WAV_SAMPLE_RATE = 22050
+WAV_CHANNELS = 1
+WAV_SAMPLE_FMT = "s16"  # signed 16-bit PCM little-endian
 
 
 # ---------- Gender map (placeholder — 2 голоса на всех) ----------
@@ -107,11 +128,26 @@ class EdgeTTSBackend:
         voice_female: str | None = None,
         rate: str = "+0%",   # "+10%" ускоряет, "-10%" замедляет
         volume: str = "+0%",
+        output_format: OutputFormat | None = None,
     ):
         self.voice_male = voice_male or os.getenv("TTS_VOICE_MALE", DEFAULT_VOICE_MALE)
         self.voice_female = voice_female or os.getenv("TTS_VOICE_FEMALE", DEFAULT_VOICE_FEMALE)
         self.rate = rate
         self.volume = volume
+
+        # Format defaults: ctor arg → env var → "mp3"
+        env_format = os.getenv("TTS_OUTPUT_FORMAT", "").lower()
+        chosen = (output_format or env_format or "mp3").lower()
+        if chosen not in ("mp3", "wav"):
+            raise ValueError(f"output_format must be 'mp3' or 'wav', got {chosen!r}")
+        self.output_format: OutputFormat = chosen  # type: ignore[assignment]
+
+        # Validate ffmpeg presence early if WAV requested.
+        if self.output_format == "wav" and shutil.which("ffmpeg") is None:
+            raise RuntimeError(
+                "TTS output_format='wav' requires `ffmpeg` on PATH "
+                "(used to convert MP3 → WAV). Install ffmpeg or use output_format='mp3'."
+            )
 
     def _voice(self, character_key: str) -> str:
         gender = GENDER_BY_CHARACTER.get(character_key, "male")
@@ -130,9 +166,11 @@ class EdgeTTSBackend:
         output_dir.mkdir(parents=True, exist_ok=True)
         voice = self._voice(character_key)
         stem = stem or f"{_safe_name(character_key)}_{uuid.uuid4().hex[:8]}"
-        out_path = output_dir / f"{stem}.mp3"
 
-        log.debug("edge-tts synth voice=%s chars=%d → %s", voice, len(text), out_path)
+        # edge-tts always emits MP3; for WAV we convert as a second pass.
+        mp3_path = output_dir / f"{stem}.mp3"
+
+        log.debug("edge-tts synth voice=%s chars=%d → %s", voice, len(text), mp3_path)
 
         async def _run() -> None:
             comm = edge_tts.Communicate(
@@ -141,10 +179,52 @@ class EdgeTTSBackend:
                 rate=self.rate,
                 volume=self.volume,
             )
-            await comm.save(str(out_path))
+            await comm.save(str(mp3_path))
 
         asyncio.run(_run())
-        return out_path
+
+        if self.output_format == "mp3":
+            return mp3_path
+
+        # WAV branch — convert via ffmpeg, then drop the intermediate MP3.
+        wav_path = output_dir / f"{stem}.wav"
+        _convert_mp3_to_wav(mp3_path, wav_path)
+        try:
+            mp3_path.unlink()
+        except OSError as e:
+            log.warning("could not delete intermediate MP3 %s: %s", mp3_path, e)
+        return wav_path
+
+
+def _convert_mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
+    """
+    Convert MP3 → WAV via ffmpeg.
+
+    Output: 22050 Hz mono 16-bit PCM little-endian — UE-friendly for
+    MetaHuman Performance audio import. Raises RuntimeError on failure.
+    """
+    cmd = [
+        "ffmpeg",
+        "-y",                       # overwrite
+        "-loglevel", "error",
+        "-i", str(mp3_path),
+        "-ar", str(WAV_SAMPLE_RATE),
+        "-ac", str(WAV_CHANNELS),
+        "-sample_fmt", WAV_SAMPLE_FMT,
+        str(wav_path),
+    ]
+    log.debug("ffmpeg convert: %s", " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except FileNotFoundError as e:
+        raise RuntimeError(f"ffmpeg not found on PATH: {e}") from e
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"ffmpeg failed (exit {e.returncode}): {e.stderr.strip() or e.stdout.strip()}"
+        ) from e
+
+    if not wav_path.exists() or wav_path.stat().st_size < 100:
+        raise RuntimeError(f"ffmpeg ran but WAV missing or empty: {wav_path}")
 
 
 # ---------- Factory ----------
@@ -153,8 +233,9 @@ def make_tts_backend() -> TTSBackend:
     """
     Выбор TTS-бекенда по env. Пока только edge-tts реализован.
 
-        TTS_BACKEND=edge         # default
-        TTS_BACKEND=none         # отключить TTS (сервер всё равно запустится)
+        TTS_BACKEND=edge              # default
+        TTS_BACKEND=none              # отключить TTS (сервер всё равно запустится)
+        TTS_OUTPUT_FORMAT=mp3|wav     # mp3 default; wav для MetaHuman Performance
     """
     name = os.getenv("TTS_BACKEND", "edge").lower()
 

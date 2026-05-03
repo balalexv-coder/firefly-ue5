@@ -1,13 +1,17 @@
 """
-Smoke-test TTS integration. Два уровня:
+Smoke-test TTS integration. Три уровня:
 
-1. Direct EdgeTTSBackend — синтезирует 2 реплики (1 мужская, 1 женская),
+1. Direct EdgeTTSBackend (MP3) — синтезирует 2 реплики (1 мужская, 1 женская),
    проверяет что MP3 файлы созданы и ненулевого размера.
 
-2. End-to-end через FastAPI TestClient с mock-LLM — убеждаемся что
+2. Direct EdgeTTSBackend (WAV) — синтезирует одну реплику с output_format="wav",
+   проверяет что WAV создан, имеет валидный RIFF header и MP3 удалён.
+
+3. End-to-end через FastAPI TestClient с mock-LLM — убеждаемся что
    /start и /turn возвращают audio_url и файлы реально на диске.
 
-Требует интернет (edge-tts обращается к Microsoft endpoint).
+Требует интернет (edge-tts обращается к Microsoft endpoint) и ffmpeg на PATH
+для шага 2.
 
 Запуск:
     python test_tts.py
@@ -80,7 +84,53 @@ def test_direct_edge_tts() -> Path:
     return out_dir
 
 
-# ---------------- Test 2: end-to-end via FastAPI TestClient ----------------
+# ---------------- Test 2: direct EdgeTTSBackend with WAV output ----------------
+
+def test_direct_edge_tts_wav() -> Path:
+    from tts import EdgeTTSBackend
+
+    section("Direct EdgeTTSBackend (WAV output)")
+    backend = EdgeTTSBackend(output_format="wav")
+    print(f"output_format={backend.output_format}")
+
+    out_dir = Path("./audio_test_wav").resolve()
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+
+    wav_path = backend.synthesize(
+        text="This audio file targets MetaHuman Performance audio-driven animation.",
+        character_key="Mal",
+        output_dir=out_dir,
+        stem="test_mal_wav",
+    )
+
+    if wav_path.suffix.lower() != ".wav":
+        fail(f"Expected .wav, got {wav_path.suffix}")
+    if not wav_path.exists():
+        fail(f"WAV file missing: {wav_path}")
+
+    size = wav_path.stat().st_size
+    if size < 1000:
+        fail(f"WAV too small: {size} bytes")
+    ok(f"WAV written: {wav_path.name} ({size:,} bytes)")
+
+    # RIFF/WAVE header check (12 bytes: 'RIFF' <size:4> 'WAVE')
+    with wav_path.open("rb") as f:
+        header = f.read(12)
+    if header[:4] != b"RIFF" or header[8:12] != b"WAVE":
+        fail(f"Not a valid WAV file (header={header!r})")
+    ok("RIFF/WAVE header OK")
+
+    # Verify intermediate MP3 was cleaned up
+    mp3_path = wav_path.with_suffix(".mp3")
+    if mp3_path.exists():
+        fail(f"Intermediate MP3 should have been deleted: {mp3_path}")
+    ok("intermediate MP3 cleaned up")
+
+    return out_dir
+
+
+# ---------------- Test 3: end-to-end via FastAPI TestClient ----------------
 
 def test_endpoint_returns_audio_urls() -> None:
     section("End-to-end: /start + /turn return audio_url and files exist")
@@ -186,10 +236,13 @@ def main() -> int:
     print("=" * 50)
 
     direct_dir = test_direct_edge_tts()
+    wav_dir = test_direct_edge_tts_wav()
     test_endpoint_returns_audio_urls()
 
     print("\n" + "=" * 50)
-    print(f"\033[32mALL PASS\033[0m — direct MP3s in {direct_dir}")
+    print(f"\033[32mALL PASS\033[0m")
+    print(f"  MP3s: {direct_dir}")
+    print(f"  WAV:  {wav_dir}")
     print("Listen to them to verify voice quality.")
     return 0
 
