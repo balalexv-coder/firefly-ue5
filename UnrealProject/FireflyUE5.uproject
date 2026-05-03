@@ -82,6 +82,37 @@
 		{
 			"Name": "LiveLinkControlRig",
 			"Enabled": true
+		},
+		{
+			"Name": "MetaHumanCalibrationDiagnostics",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64"
+			]
+		},
+		{
+			"Name": "MetaHumanCalibrationProcessing",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Linux"
+			]
+		},
+		{
+			"Name": "MetaHumanCharacter",
+			"Enabled": true
+		},
+		{
+			"Name": "MetaHumanCharacterUAF",
+			"Enabled": true
+		},
+		{
+			"Name": "MetaHumanLiveLink",
+			"Enabled": true
+		},
+		{
+			"Name": "MetaHumanRuntime",
+			"Enabled": true
 		}
 	]
 }
