@@ -27,25 +27,35 @@ TTS (edge-tts, 22050 Hz mono 16-bit WAV)
 | Process → curves сгенерированы | ✅ closed (260 curves подтверждено в Persona) |
 | Export Animation Sequence | ✅ closed (`A_Mal_Demo_Lipsync` на Face_Archetype) |
 | Воспроизведение в Persona standalone | ✅ closed (рот/брови двигаются) |
-| **Воспроизведение на полном Mal'е (с телом) в уровне** | ⚠️ **частично** — см. ниже |
+| **Воспроизведение на полном Mal'е (с телом) в уровне через Sequencer** | ✅ closed (см. "Solution" ниже) |
 
-## Главный gotcha — Face_AnimBP swallows curves
+## Solution — `+ Track → Animation` на Face компоненте
 
-**Симптом:** При помещении `A_Mal_Demo_Lipsync` в Sequencer на компонент `Face` MetaHuman'а — рот/лицо не двигаются. При этом ровно тот же AnimSequence в Persona на превью-меше работает.
+**Корректный workflow подтверждён:**
 
-**Причина:** MetaHuman `Face_AnimBP_C` спроектирован под **Live Link face capture** (поток curve-данных извне). Он не имеет Sequencer-aware slot и просто перетирает curves своими (которые в нашем случае пустые, потому что Live Link не подключён).
+1. Создать Level Sequence (`LS_*`) с возможностью посадки актора и аудио-трека.
+2. В Sequencer добавить актора (Mal_MetaHuman) — Possessable достаточно (Spawnable не требуется).
+3. Развернуть актор → найти подтрек **Face**.
+4. На строке **Face** нажать **`+`** (кнопка "Track") → подменю → выбрать **Animation** → из списка ассетов выбрать `A_*_Lipsync` AnimSequence.
+5. На Audio track добавить соответствующий SoundWave (`mal_demo_long`).
+6. Жать **Play в Sequencer** (треугольник в нижней панели Sequencer окна, не главный editor Play).
 
-**Подтверждение workflow'a:** если у `Face` компонента переключить **Animation Mode → Use Animation Asset** и подставить `A_Mal_Demo_Lipsync`, рот двигается. Но при этом Face теряет привязку к head bone Body и **отделяется от тела** (голова "плавает" в air space на high Z). Это второй gotcha — Face SkeletalMeshComponent у MetaHuman'а зависит от runtime-логики Face_AnimBP для master-pose / follow-body, и override AnimMode эту логику отключает.
+В этом сетапе:
+- Face Animation Mode остаётся `Use Animation Blueprint`, Anim Class = `Face_AnimBP_C` (стандарт MetaHuman'а).
+- Face привязан к Body head bone (как обычно), голова не отделяется.
+- Skeletal Animation секция Sequencer'а инжектируется поверх AnimBP — curves достигают Face_PostProcess_AnimBP и применяются к мешу.
 
-**Резюме:** оба варианта по отдельности не работают. Для финального решения нужно одно из:
+## Что НЕ работает / тупик'и (для будущего)
 
-| Вариант | Усилия | Минусы |
-|---|---|---|
-| **A. Custom Face_AnimBP slot** — модифицировать AnimBP добавив `DefaultSlot` ноду через которую инжектируется Sequencer-анимация. После — `A_Mal_Demo_Lipsync` течёт через AnimBP, post-process работает, тело не отделяется. | Средне (1-2 ч; нужен duplicate `Face_AnimBP` под наш проект) | Нужно поддерживать форк AnimBP при апдейтах MetaHuman |
-| **B. Sequencer Attach Track + Override Mode** — оставить Face Animation Mode = Use Animation Asset (рот двигается, голова отделяется), и в Sequencer добавить **Attach Track** на Face компонент → пристегнуть к `Body` socket `head`. | Малые (30 мин на актора, повторяется в каждом Level Sequence) | Workaround, не runtime-решение — годится для cinematics, не для динамических dialogue реплик |
-| **C. Anim Sub Instance / Linked AnimBP** — UE 5.x поддерживает `Linked Anim Graph` который позволяет подменять часть AnimBP на другой граф в runtime. Можно сделать `Face_AnimBP_Lipsync` который проигрывает curves из переменной AnimSequence. | Высокие (2-3 ч на освоение Linked AnimBP в контексте MetaHuman) | Сложно отлаживать, риск задеть LOD/streaming setup MetaHuman'а |
+Чтобы не наступить повторно:
 
-**Текущий план:** идти на **A (Custom Face_AnimBP slot)** для polish-итерации, потому что это единственный вариант, который позволит **runtime воспроизводить lipsync во время dialogue без preset Level Sequence'ов**. Без этого dialogue server бесполезен для face animation.
+| Подход | Результат |
+|---|---|
+| Override Animation Mode на компоненте Face → Use Animation Asset, Anim to Play = `A_*_Lipsync` | Lipsync **играет**, но голова **отделяется от тела** (Face теряет master-pose link к Body head bone). |
+| `+ Track → Control Rig` или авто-добавление Control Rig'а при drag-drop AnimSequence на Face | Перехватывает Face controls — curves не доходят до меша. Удалять Control Rig трек. |
+| Drag-drop AnimSequence из Content Browser на строку Face | Часто промахивается и кидается в parent (Mal_MetaHuman), а не в Face. Использовать **`+ Track → Animation`** через menu — стабильнее. |
+| Editor Mode = "Animation Mode" во время Play | Может ложить Control Rig override на скелет. Использовать **Selection Mode** во время Sequencer Play. |
+| PIE (Alt+P / главный Play в редакторе) для проверки lipsync | Спавнит player pawn → камера улетает на Player Start, актор в level вне фокуса. Использовать **Sequencer Play** (треугольник в нижней панели Sequencer). |
 
 ## Step-by-step (что закрыто)
 
@@ -93,17 +103,19 @@ Skeleton автоматически выставляется в `Face_Archetype_
 - Внизу в Curves секции отображаться ~260 curves (CTRL_expressions_*, ...).
 - Виден баннер: "Post process Animation Blueprint 'Face_PostProcess_AnimBP' is running" — это норма.
 
-## Open question — на следующую сессию
+## Open question — runtime-режим для dialogue server
 
-Реализовать **вариант A (Custom Face_AnimBP slot)**:
+Текущее решение — **Sequencer-based**, рассчитано на **pre-baked Level Sequence**: для каждой реплики экипажа нужен свой `LS_<character>_<line>` с привязанным `A_*_Lipsync` и SoundWave.
 
-1. Найти `Face_AnimBP` в `Content/MetaHumans/Common/Face/` (или похоже).
-2. Сделать `Duplicate` → `Face_AnimBP_Lipsync` (или `ABP_FireflyFace`).
-3. В AnimGraph после Live Link / Default flow добавить **Slot** ноду с именем `LipsyncSlot`.
-4. На каждом MetaHuman BP (BP_Mal/Zoe/Wash/Inara) переключить Anim Class у компонента `Face` на новый AnimBP.
-5. В Sequencer Animation track на Face → теперь curves инжектируются в `LipsyncSlot` и доходят до post-process AnimBP.
+Для **dynamic dialogue** (когда реплика приходит от LLM в runtime через `/turn` endpoint) нужен другой механизм:
 
-Альтернативно — runtime `Play Anim Slot` через C++ или Blueprint когда dialogue server возвращает audio_url + AnimSequence path.
+| Подход | Идея |
+|---|---|
+| **Runtime Sequencer construction** | Blueprint actor получает `audio_url` + path к AnimSequence, на лету собирает Level Sequence и проигрывает через Level Sequence Player. |
+| **Anim Slot в Face_AnimBP_C fork'е** | Duplicate Face_AnimBP, добавить DefaultSlot, в BP-actor вызывать `PlaySlotAnimation` с динамически загруженным AnimSequence. Минус — поддержка форка AnimBP. |
+| **Linked Anim Graph** | Подключать sub-AnimBP с Animation Sequence Player, динамически меняя AnimSequence через AnimGraph переменную. |
+
+Решается в Step 6D (UE runtime playback из dialogue server'а).
 
 ## Артефакты в репо
 
@@ -111,7 +123,7 @@ Skeleton автоматически выставляется в `Face_Archetype_
 - `UnrealProject/Content/Audio/Dialogue/Test/mal_demo_long.uasset` — SoundWave
 - `UnrealProject/Content/Audio/Dialogue/Test/MHP_Mal_Demo.uasset` — MetaHuman Performance
 - `UnrealProject/Content/Audio/Dialogue/Test/A_Mal_Demo_Lipsync.uasset` — exported AnimSequence (260 curves)
-- `UnrealProject/Content/Cinematics/LS_Test_Mal_Lipsync.uasset` — тестовый Level Sequence (демонстрирует gotcha; не финальное решение)
+- `UnrealProject/Content/Cinematics/LS_Test_Mal_Lipsync.uasset` — рабочий Level Sequence: Audio + Face/Animation tracks, lipsync воспроизводится через Sequencer Play.
 
 ## Ссылки
 
