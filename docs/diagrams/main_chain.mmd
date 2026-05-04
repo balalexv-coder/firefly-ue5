@@ -1,0 +1,30 @@
+flowchart LR
+    TP([TestPlay event])
+    BP([Event BeginPlay])
+
+    TP --> C1
+    BP --> C1
+
+    SP[(Speaker variable)] -. data .-> C1[Cast To BP_Mal]
+    C1 -. "As BP Mal" .-> GAI[Get Anim Instance Body]
+    GAI -. "Return Value" .-> C2
+
+    C1 ==> C2[Cast To ABP_Crew]
+    C2 -. "As ABP Crew" .-> ST[SET IsSpeaking = True]
+    C2 ==> ST
+
+    ST ==> CR[Create Level Sequence Player]
+    LSV[(LSToPlay variable)] -. data .-> CR
+
+    CR ==> BE[Bind Event to OnFinished]
+    CR -. "Return Value" .-> BE
+    OFE([OnLineFinished event ref]) -. event ref .-> BE
+
+    BE ==> PL[Play]
+    CR -. "Return Value" .-> PL
+
+    style TP fill:#8B0000,color:#fff
+    style BP fill:#8B0000,color:#fff
+    style OFE fill:#8B0000,color:#fff
+    style SP fill:#1E3A8A,color:#fff
+    style LSV fill:#1E3A8A,color:#fff

@@ -1,0 +1,15 @@
+flowchart LR
+    OF([OnLineFinished custom event])
+
+    OF ==> C1[Cast To BP_Mal]
+    SP[(Speaker variable)] -. data .-> C1
+
+    C1 -. "As BP Mal" .-> GAI[Get Anim Instance Body]
+    GAI -. "Return Value" .-> C2
+    C1 ==> C2[Cast To ABP_Crew]
+
+    C2 -. "As ABP Crew" .-> SF[SET IsSpeaking = False]
+    C2 ==> SF
+
+    style OF fill:#8B0000,color:#fff
+    style SP fill:#1E3A8A,color:#fff
