@@ -303,15 +303,6 @@ def _find_face_component(actor: unreal.Actor) -> unreal.SkeletalMeshComponent:
     )
 
 
-def _seconds_to_ticks(seconds: float, tick_resolution: unreal.FrameRate) -> int:
-    """Конвертация секунд в ticks (внутренние единицы MovieScene).
-
-    LevelSequence хранит section ranges в tick resolution, не display rate.
-    Default tick resolution = 60000/1 (= 60 kHz), display rate = 30/1.
-    """
-    return int(seconds * tick_resolution.numerator / tick_resolution.denominator)
-
-
 def create_level_sequence(
     character_key: str,
     line_id: str,
@@ -375,23 +366,32 @@ def create_level_sequence(
         factory=unreal.LevelSequenceFactoryNew(),
     )
 
-    movie_scene = level_sequence.get_movie_scene()
-    movie_scene.set_display_rate(unreal.FrameRate(30, 1))
-    tick_res = movie_scene.get_tick_resolution()
+    # Display rate / tick resolution оставляем default (30 fps / 60000 ticks/sec).
+    # Section ranges в UE 5.7 Python ставим через seconds-based API
+    # (set_start_frame_seconds / set_end_frame_seconds), что избавляет от
+    # ручного tick math и проблем с отсутствующим get_tick_resolution.
 
-    # Possessable bindings: actor → Face (sub-binding через set_parent).
+    # Possessable bindings: actor → Face.
+    # Cosmetic операции (set_parent для иерархии, set_display_name) обёрнуты
+    # в try/except — UE 5.7 Python API не всегда экспортит эти методы и
+    # для воспроизведения LS они не нужны (Possessable bindings ссылаются
+    # на objects напрямую).
     actor_binding = level_sequence.add_possessable(actor)
-    actor_binding.set_display_name(actor_label)
-
     face_binding = level_sequence.add_possessable(face_comp)
-    face_binding.set_parent(actor_binding)
-    face_binding.set_display_name("Face")
 
-    # Длина из AnimSequence (надёжнее чем SoundWave для нашего случая —
-    # они одной длины, т.к. оба сгенерены из того же Performance).
+    try:
+        face_binding.set_parent(actor_binding)
+        actor_binding.set_display_name(actor_label)
+        face_binding.set_display_name("Face")
+        _log("binding hierarchy: face nested under actor")
+    except AttributeError as e:
+        _log(f"binding hierarchy methods unavailable ({e}); leaving flat — "
+             "playback unaffected")
+
+    # Длина из AnimSequence (надёжнее чем SoundWave — они одной длины, т.к.
+    # оба сгенерены из того же Performance).
     duration_seconds = anim_sequence.get_play_length()
-    end_tick = _seconds_to_ticks(duration_seconds, tick_res)
-    _log(f"section length: {duration_seconds:.3f}s ({end_tick} ticks)")
+    _log(f"section length: {duration_seconds:.3f}s")
 
     # Skeletal Animation track + section на Face binding.
     anim_track = face_binding.add_track(unreal.MovieSceneSkeletalAnimationTrack)
@@ -399,17 +399,22 @@ def create_level_sequence(
     params = unreal.MovieSceneSkeletalAnimationParams()
     params.set_editor_property("Animation", anim_sequence)
     anim_section.set_editor_property("Params", params)
-    anim_section.set_range(0, end_tick)
+    anim_section.set_start_frame_seconds(0.0)
+    anim_section.set_end_frame_seconds(duration_seconds)
 
     # Audio track + section на root sequence.
     audio_track = level_sequence.add_track(unreal.MovieSceneAudioTrack)
     audio_section = audio_track.add_section()
     audio_section.set_sound(sound_wave)
-    audio_section.set_range(0, end_tick)
+    audio_section.set_start_frame_seconds(0.0)
+    audio_section.set_end_frame_seconds(duration_seconds)
 
     # Playback range = вся анимация.
-    level_sequence.set_playback_start_seconds(0.0)
-    level_sequence.set_playback_end_seconds(duration_seconds)
+    try:
+        level_sequence.set_playback_start_seconds(0.0)
+        level_sequence.set_playback_end_seconds(duration_seconds)
+    except AttributeError as e:
+        _log(f"set_playback_*_seconds unavailable ({e}); LS uses default range")
 
     _log(f"created LevelSequence {ls_path}")
     return level_sequence
