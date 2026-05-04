@@ -1,5 +1,5 @@
 """
-firefly_face_pipeline — авто-пайплайн "WAV → MetaHuman face AnimSequence".
+firefly_face_pipeline — авто-пайплайн "WAV → MetaHuman face AnimSequence + LS".
 
 Что делает:
   1. Импортирует WAV файл (с диска) в `/Game/Audio/Dialogue/Generated/<character>/`
@@ -9,13 +9,15 @@ firefly_face_pipeline — авто-пайплайн "WAV → MetaHuman face Anim
   3. Запускает блокирующий Process (start_pipeline) — генерация face curves.
   4. Экспортит Animation Sequence (`A_<character>_<stem>_Lipsync`) на
      Face_Archetype_Skeleton, без UI диалога.
-  5. Сохраняет все ассеты на диск.
+  5. Программно генерирует Possessable Level Sequence (`LS_<character>_<stem>`):
+     binding на character actor'а в L_SerenityCabin, sub-binding на Face,
+     Audio track + Skeletal Animation track. См. create_level_sequence().
+  6. Сохраняет все ассеты на диск.
 
-Level Sequence НЕ генерится автоматически (попытка через Epic's
-export_level_sequence создавала Spawnable Mal — упирался в memory limit на
-runtime, текстуры MetaHuman ~4.5 GB). Per-line LS-ы создаём вручную в
-редакторе на основе template'а LS_Test_Mal_Lipsync — копируем, swap'аем
-audio + anim ссылки. См. docs/runbooks/05_metahuman_audio_driven_face.md.
+Spawnable LS (через Epic's export_level_sequence) забракован — упирался в
+memory limit (~4.5 GB MetaHuman текстур). Используем Possessable + ручной
+поиск actor'а в loaded level через EditorActorSubsystem. См. docs/runbooks/
+05_metahuman_audio_driven_face.md.
 
 Идемпотентно: повторный запуск с тем же stem перезаписывает ассеты (если флаг
 overwrite=True), либо пропускает если ассет существует.
@@ -57,6 +59,23 @@ FACE_ARCHETYPE_SKELETON = (
 )
 
 VALID_CHARACTERS = ("Mal", "Zoe", "Wash", "Inara")
+
+# Уровень с уже размещёнными crew member'ами — нужен для поиска actor'а при
+# создании Possessable binding. Загружается headless'ом (load_map).
+LEVEL_PATH = "/Game/Levels/L_SerenityCabin"
+
+# Mapping character key → actor label (имя в Outliner) в L_SerenityCabin.
+# Mal placeable отличается именем от других (BP_Mal был переименован в Mal_MetaHuman).
+CHAR_TO_ACTOR_LABEL = {
+    "Mal": "Mal_MetaHuman",
+    "Zoe": "BP_Zoe",
+    "Wash": "BP_Wash",
+    "Inara": "BP_Inara",
+}
+
+# Имя SkeletalMeshComponent на MetaHuman BP, который проигрывает face anim.
+# Для всех 4 MetaHuman'ов это "Face" (стандартное имя в MetaHuman BP template).
+FACE_COMPONENT_NAME = "Face"
 
 
 # ---------- Хелперы ----------
@@ -233,6 +252,169 @@ def export_anim_sequence(
     return anim_seq
 
 
+# ---------- Этап 5: Auto-gen Possessable Level Sequence ----------
+
+def _ensure_level_loaded(level_path: str) -> None:
+    """
+    Загрузить уровень, если он ещё не загружен. Нужно для поиска actor'ов
+    через EditorActorSubsystem.get_all_level_actors().
+
+    В headless режиме (UE-Cmd -run=pythonscript) текущий "редакторский мир"
+    обычно — пустая Untitled. Без явной загрузки L_SerenityCabin нашего
+    Mal_MetaHuman/BP_Zoe/etc. не найти.
+    """
+    actor_subsys = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    # Если уже что-то живое в текущем уровне — проверим имя.
+    actors = actor_subsys.get_all_level_actors()
+    if actors:
+        any_actor = actors[0]
+        current_world = any_actor.get_world().get_path_name()
+        if level_path in current_world:
+            _log(f"level already loaded: {current_world}")
+            return
+
+    _log(f"loading level: {level_path}")
+    unreal.EditorLoadingAndSavingUtils.load_map(level_path)
+
+
+def _find_actor_by_label(label: str) -> unreal.Actor:
+    """Найти actor в текущем уровне по его Outliner label."""
+    actor_subsys = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for actor in actor_subsys.get_all_level_actors():
+        if actor.get_actor_label() == label:
+            return actor
+    raise RuntimeError(
+        f"Actor with label '{label}' not found in current level. "
+        f"Available labels (first 10): "
+        f"{[a.get_actor_label() for a in actor_subsys.get_all_level_actors()[:10]]}"
+    )
+
+
+def _find_face_component(actor: unreal.Actor) -> unreal.SkeletalMeshComponent:
+    """Найти Face SkeletalMeshComponent на MetaHuman actor'е."""
+    components = actor.get_components_by_class(unreal.SkeletalMeshComponent)
+    for comp in components:
+        if comp.get_name() == FACE_COMPONENT_NAME:
+            return comp
+    raise RuntimeError(
+        f"'{FACE_COMPONENT_NAME}' SkeletalMeshComponent not found on "
+        f"{actor.get_actor_label()}. Available components: "
+        f"{[c.get_name() for c in components]}"
+    )
+
+
+def _seconds_to_ticks(seconds: float, tick_resolution: unreal.FrameRate) -> int:
+    """Конвертация секунд в ticks (внутренние единицы MovieScene).
+
+    LevelSequence хранит section ranges в tick resolution, не display rate.
+    Default tick resolution = 60000/1 (= 60 kHz), display rate = 30/1.
+    """
+    return int(seconds * tick_resolution.numerator / tick_resolution.denominator)
+
+
+def create_level_sequence(
+    character_key: str,
+    line_id: str,
+    sound_wave: unreal.SoundWave,
+    anim_sequence: unreal.AnimSequence,
+    target_dir: str,
+    *,
+    overwrite: bool = False,
+) -> unreal.LevelSequence:
+    """
+    Программно генерирует Possessable Level Sequence для одной dialogue line.
+
+    Структура созданного LS:
+      - Possessable binding на character actor'а (Mal_MetaHuman / BP_Zoe / ...)
+        в L_SerenityCabin
+      - Sub-binding на его Face SkeletalMeshComponent (set_parent → actor binding)
+      - На root: MovieSceneAudioTrack с section, проигрывающим sound_wave
+      - На Face binding: MovieSceneSkeletalAnimationTrack с section,
+        проигрывающим anim_sequence
+      - Playback range = длина anim_sequence
+
+    Это эквивалент того, что делается вручную в Sequencer:
+      1. + Track → Actor To Sequencer → Mal_MetaHuman
+      2. На Mal_MetaHuman binding: + Track → Component → Face
+      3. На Face binding: + Track → Animation → A_Mal_<line>_Lipsync
+      4. На root: + Track → Audio → <sound_wave>
+      5. AutoSize sections, set Playback Range
+    """
+    if character_key not in CHAR_TO_ACTOR_LABEL:
+        raise ValueError(
+            f"Unknown character_key={character_key!r}; "
+            f"expected one of {list(CHAR_TO_ACTOR_LABEL)}"
+        )
+
+    ls_name = f"LS_{character_key}_{line_id}"
+    ls_path = f"{target_dir}/{ls_name}"
+
+    asset_lib = unreal.EditorAssetLibrary
+    if asset_lib.does_asset_exist(ls_path):
+        if not overwrite:
+            _log(f"LevelSequence exists at {ls_path}, reusing")
+            return unreal.load_asset(ls_path)
+        _log(f"overwrite: deleting existing {ls_path}")
+        asset_lib.delete_asset(ls_path)
+
+    # Загружаем сцену чтобы actor был findable.
+    _ensure_level_loaded(LEVEL_PATH)
+
+    actor_label = CHAR_TO_ACTOR_LABEL[character_key]
+    actor = _find_actor_by_label(actor_label)
+    face_comp = _find_face_component(actor)
+    _log(f"binding source: actor='{actor_label}' face='{face_comp.get_name()}'")
+
+    _ensure_dir(target_dir)
+
+    asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+    level_sequence = asset_tools.create_asset(
+        asset_name=ls_name,
+        package_path=target_dir,
+        asset_class=unreal.LevelSequence,
+        factory=unreal.LevelSequenceFactoryNew(),
+    )
+
+    movie_scene = level_sequence.get_movie_scene()
+    movie_scene.set_display_rate(unreal.FrameRate(30, 1))
+    tick_res = movie_scene.get_tick_resolution()
+
+    # Possessable bindings: actor → Face (sub-binding через set_parent).
+    actor_binding = level_sequence.add_possessable(actor)
+    actor_binding.set_display_name(actor_label)
+
+    face_binding = level_sequence.add_possessable(face_comp)
+    face_binding.set_parent(actor_binding)
+    face_binding.set_display_name("Face")
+
+    # Длина из AnimSequence (надёжнее чем SoundWave для нашего случая —
+    # они одной длины, т.к. оба сгенерены из того же Performance).
+    duration_seconds = anim_sequence.get_play_length()
+    end_tick = _seconds_to_ticks(duration_seconds, tick_res)
+    _log(f"section length: {duration_seconds:.3f}s ({end_tick} ticks)")
+
+    # Skeletal Animation track + section на Face binding.
+    anim_track = face_binding.add_track(unreal.MovieSceneSkeletalAnimationTrack)
+    anim_section = anim_track.add_section()
+    params = unreal.MovieSceneSkeletalAnimationParams()
+    params.set_editor_property("Animation", anim_sequence)
+    anim_section.set_editor_property("Params", params)
+    anim_section.set_range(0, end_tick)
+
+    # Audio track + section на root sequence.
+    audio_track = level_sequence.add_track(unreal.MovieSceneAudioTrack)
+    audio_section = audio_track.add_section()
+    audio_section.set_sound(sound_wave)
+    audio_section.set_range(0, end_tick)
+
+    # Playback range = вся анимация.
+    level_sequence.set_playback_start_seconds(0.0)
+    level_sequence.set_playback_end_seconds(duration_seconds)
+
+    _log(f"created LevelSequence {ls_path}")
+    return level_sequence
+
+
 # ---------- Pipeline orchestration ----------
 
 def run_pipeline(
@@ -278,11 +460,23 @@ def run_pipeline(
     anim_name = f"A_{character_key}_{stem}_Lipsync"
     anim_seq = export_anim_sequence(performance, line_dir, anim_name)
 
-    # 5. Save all
+    # 5. Possessable Level Sequence (LS_<character>_<stem>)
+    ls_name = f"LS_{character_key}_{stem}"
+    create_level_sequence(
+        character_key=character_key,
+        line_id=stem,
+        sound_wave=sound_wave,
+        anim_sequence=anim_seq,
+        target_dir=line_dir,
+        overwrite=overwrite,
+    )
+
+    # 6. Save all
     for path in (
         f"{line_dir}/{sound_wave_name}",
         f"{line_dir}/{perf_name}",
         f"{line_dir}/{anim_name}",
+        f"{line_dir}/{ls_name}",
     ):
         _save_asset(path)
 
@@ -292,6 +486,7 @@ def run_pipeline(
         "sound_wave": f"{line_dir}/{sound_wave_name}",
         "performance": f"{line_dir}/{perf_name}",
         "anim_sequence": f"{line_dir}/{anim_name}",
+        "level_sequence": f"{line_dir}/{ls_name}",
     }
 
 
