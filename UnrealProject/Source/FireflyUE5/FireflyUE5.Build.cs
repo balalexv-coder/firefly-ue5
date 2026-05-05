@@ -19,6 +19,8 @@ public class FireflyUE5 : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"UMG",
+			"LevelSequence",
+			"MovieScene",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
