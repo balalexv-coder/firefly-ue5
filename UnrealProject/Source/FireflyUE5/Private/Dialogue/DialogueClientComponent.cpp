@@ -150,9 +150,10 @@ TSharedRef<FJsonObject> UDialogueClientComponent::BuildTurnBody(const FString& P
 bool UDialogueClientComponent::ParseLine(const TSharedPtr<FJsonObject>& Obj, FDialogueLine& Out)
 {
 	if (!Obj.IsValid()) return false;
-	Obj->TryGetStringField(TEXT("speaker"),  Out.Speaker);
-	Obj->TryGetStringField(TEXT("line"),     Out.Line);
-	Obj->TryGetStringField(TEXT("emotion"),  Out.Emotion);
+	Obj->TryGetStringField(TEXT("speaker"),   Out.Speaker);
+	Obj->TryGetStringField(TEXT("line"),      Out.Line);
+	Obj->TryGetStringField(TEXT("line_id"),   Out.LineID);
+	Obj->TryGetStringField(TEXT("emotion"),   Out.Emotion);
 	Obj->TryGetStringField(TEXT("audio_url"), Out.AudioUrl);
 	int32 Dur = 0;
 	Obj->TryGetNumberField(TEXT("duration_ms"), Dur);

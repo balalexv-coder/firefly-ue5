@@ -18,6 +18,15 @@ struct FIREFLYUE5_API FDialogueLine
 	/** Текст реплики. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere) FString Line;
 
+	/**
+	 * Стабильный ID реплики, по которому ADialogueManager строит путь
+	 * к LS ассету: `/Game/Audio/Dialogue/Generated/<Speaker>/<LineID>/LS_<Speaker>_<LineID>`.
+	 * Пусто — будем показывать только субтитры через HUD без LS playback.
+	 * Сервер должен заполнять это поле (для демо-реплик уже сгенерённых
+	 * Python pipeline'ом — соответственно intro_atmo / orders / status / etc).
+	 */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere) FString LineID;
+
 	/** Эмоциональный тон: calm, gruff, bright, dry, cryptic, warm, flirty, amused, serious, deadpan. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere) FString Emotion;
 

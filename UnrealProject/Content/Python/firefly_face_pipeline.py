@@ -256,37 +256,53 @@ def export_anim_sequence(
 
 def _ensure_level_loaded(level_path: str) -> None:
     """
-    Загрузить уровень, если он ещё не загружен. Нужно для поиска actor'ов
-    через EditorActorSubsystem.get_all_level_actors().
+    Раньше эта функция вызывала load_map чтобы гарантировать что уровень
+    с актёрами загружен. Это убивало PIE (load_map editor world'а во время
+    PIE crashes the play session).
 
-    В headless режиме (UE-Cmd -run=pythonscript) текущий "редакторский мир"
-    обычно — пустая Untitled. Без явной загрузки L_SerenityCabin нашего
-    Mal_MetaHuman/BP_Zoe/etc. не найти.
+    Теперь — функция NO-OP: предполагаем что вызывающий уже открыл нужный
+    уровень в editor (либо вручную, либо PIE копия из L_SerenityCabin).
+    Если actors не найдутся — _find_actor_by_label выбросит понятную ошибку.
+
+    Для headless-режима без открытого editor: pipeline всё равно работает
+    через remote exec в открытом UE Editor (не UE-Cmd), так что актёры
+    всегда доступны в editor's current world.
     """
     actor_subsys = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    # Если уже что-то живое в текущем уровне — проверим имя.
     actors = actor_subsys.get_all_level_actors()
     if actors:
-        any_actor = actors[0]
-        current_world = any_actor.get_world().get_path_name()
-        if level_path in current_world:
-            _log(f"level already loaded: {current_world}")
-            return
-
-    _log(f"loading level: {level_path}")
-    unreal.EditorLoadingAndSavingUtils.load_map(level_path)
+        current_world = actors[0].get_world().get_path_name()
+        _log(f"using current world (no load_map): {current_world}")
+    else:
+        _log("WARNING: no actors in current world — _find_actor_by_label will fail")
 
 
 def _find_actor_by_label(label: str) -> unreal.Actor:
-    """Найти actor в текущем уровне по его Outliner label."""
-    actor_subsys = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    for actor in actor_subsys.get_all_level_actors():
+    """
+    Найти actor по Outliner label в editor world.
+
+    Используем UnrealEditorSubsystem.get_editor_world() + GameplayStatics
+    вместо EditorActorSubsystem.get_all_level_actors() — последний во
+    время PIE может возвращать empty list (current world становится
+    PIE-копия которая может быть недоступна из remote exec context).
+    """
+    editor_subsys = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+    editor_world = editor_subsys.get_editor_world()
+    if editor_world is None:
+        raise RuntimeError("UnrealEditorSubsystem.get_editor_world() returned None")
+
+    all_actors = unreal.GameplayStatics.get_all_actors_of_class(
+        editor_world, unreal.Actor.static_class()
+    )
+
+    for actor in all_actors:
         if actor.get_actor_label() == label:
             return actor
+
+    available = [a.get_actor_label() for a in all_actors[:10]]
     raise RuntimeError(
-        f"Actor with label '{label}' not found in current level. "
-        f"Available labels (first 10): "
-        f"{[a.get_actor_label() for a in actor_subsys.get_all_level_actors()[:10]]}"
+        f"Actor with label '{label}' not found in editor world. "
+        f"Available labels (first 10): {available} (total: {len(all_actors)})"
     )
 
 

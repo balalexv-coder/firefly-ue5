@@ -3,6 +3,7 @@
 #include "Dialogue/FireflyDialogueFlowActor.h"
 #include "FireflyUE5.h"
 #include "Dialogue/DialogueClientComponent.h"
+#include "Dialogue/DialogueManager.h"
 #include "UI/FireflyDialogueHUDWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/Engine.h"
@@ -26,6 +27,12 @@ void AFireflyDialogueFlowActor::BeginPlay()
 	DialogueClient->OnSessionStarted.AddDynamic(this, &AFireflyDialogueFlowActor::HandleSessionStarted);
 	DialogueClient->OnTurnReceived.AddDynamic(this, &AFireflyDialogueFlowActor::HandleTurnReceived);
 	DialogueClient->OnError.AddDynamic(this, &AFireflyDialogueFlowActor::HandleError);
+
+	if (DialogueManager)
+	{
+		DialogueManager->OnLineFinished.AddDynamic(
+			this, &AFireflyDialogueFlowActor::HandleDialogueManagerLineFinished);
+	}
 
 	SetupHUD();
 
@@ -128,6 +135,13 @@ void AFireflyDialogueFlowActor::HandleLineFinished()
 	PlayNextLineOrShowOptions();
 }
 
+void AFireflyDialogueFlowActor::HandleDialogueManagerLineFinished(const FString& Speaker, const FString& LineID)
+{
+	UE_LOG(LogFirefly, Log, TEXT("FlowActor: DialogueManager finished line speaker='%s' id='%s'"),
+		*Speaker, *LineID);
+	PlayNextLineOrShowOptions();
+}
+
 void AFireflyDialogueFlowActor::HandleOptionPicked(int32 Index, const FString& OptionText)
 {
 	if (!DialogueClient) return;
@@ -145,6 +159,33 @@ void AFireflyDialogueFlowActor::PlayNextLineOrShowOptions()
 	{
 		FDialogueLine Line = PendingLines[0];
 		PendingLines.RemoveAt(0);
+
+		// Если есть DialogueManager + LineID → проигрываем через LS
+		// (lipsync + body gesture). HUD используется параллельно для
+		// субтитров (без timer-based finish — финиш приходит от LS).
+		const bool bUseLSPlayback =
+			DialogueManager != nullptr &&
+			!Line.LineID.IsEmpty() &&
+			Line.Speaker != TEXT("player");
+
+		UE_LOG(LogFirefly, Log, TEXT("FlowActor: line speaker='%s' line_id='%s' DM=%s → bUseLS=%d"),
+			*Line.Speaker, *Line.LineID,
+			(DialogueManager ? *DialogueManager->GetName() : TEXT("NULL")),
+			bUseLSPlayback ? 1 : 0);
+
+		if (bUseLSPlayback)
+		{
+			if (HUDWidget)
+			{
+				HUDWidget->PlayLine(Line.Speaker, Line.Line, /*DurationMs=*/0);
+			}
+			DialogueManager->PlayLine(Line.Speaker, Line.LineID);
+			// Завершение придёт через HandleDialogueManagerLineFinished.
+			return;
+		}
+
+		// Fallback: HUD-only текстовый режим (для player'а или
+		// если LineID не указан / DialogueManager не задан).
 		if (HUDWidget)
 			HUDWidget->PlayLine(Line.Speaker, Line.Line, Line.DurationMs);
 		else

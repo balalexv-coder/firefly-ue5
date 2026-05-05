@@ -9,6 +9,7 @@
 
 class UDialogueClientComponent;
 class UFireflyDialogueHUDWidget;
+class ADialogueManager;
 
 /**
  * Мастер-актёр диалоговой сцены.
@@ -50,6 +51,15 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Firefly|Flow")
 	TObjectPtr<UFireflyDialogueHUDWidget> HUDWidget;
 
+	/**
+	 * Опциональная ссылка на ADialogueManager в сцене. Если задан и у line
+	 * есть LineID — реплика проигрывается через LS playback (lipsync + body
+	 * gesture) ВМЕСТО HUD-only текстового режима. HUD всё равно показывает
+	 * субтитры. Установи в Outliner Details для BP_DialogueFlowActor.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Flow")
+	TObjectPtr<ADialogueManager> DialogueManager;
+
 	/** Вызвать ручной старт, если bAutoStartOnBeginPlay=false. */
 	UFUNCTION(BlueprintCallable, Category = "Firefly|Flow")
 	void StartDialogue();
@@ -64,6 +74,9 @@ protected:
 
 	UFUNCTION() void HandleLineFinished();
 	UFUNCTION() void HandleOptionPicked(int32 Index, const FString& OptionText);
+
+	/** Обработчик OnLineFinished от ADialogueManager (LS закончила играть). */
+	UFUNCTION() void HandleDialogueManagerLineFinished(const FString& Speaker, const FString& LineID);
 
 private:
 	TArray<FDialogueLine> PendingLines;

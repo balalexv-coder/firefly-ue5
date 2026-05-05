@@ -37,6 +37,22 @@ public:
     TMap<FString, TObjectPtr<AActor>> Speakers;
 
     /**
+     * Если true — на BeginPlay автоматически проигрывает приветственную
+     * реплику (WelcomeSpeaker / WelcomeLineID). Полезно как smoke-test
+     * audio системы перед тем как ждать LLM. По умолчанию OFF — LLM
+     * opener из FireflyDialogueFlow всё равно играет первой репликой
+     * демо-пула, дополнительный welcome дублирует.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Dialogue")
+    bool bPlayWelcomeOnBeginPlay = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Dialogue")
+    FString WelcomeSpeaker = TEXT("Mal");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Dialogue")
+    FString WelcomeLineID = TEXT("intro_atmo");
+
+    /**
      * Проиграть dialogue line. Загружает LS по пути
      * `/Game/Audio/Dialogue/Generated/<SpeakerName>/<LineID>/LS_<SpeakerName>_<LineID>`,
      * включает IsSpeaking=true на ABP_Crew speaker'а, играет, на финише
@@ -56,6 +72,8 @@ public:
     FOnLineFinishedSignature OnLineFinished;
 
 protected:
+    virtual void BeginPlay() override;
+
     UFUNCTION()
     void HandleLSFinished();
 

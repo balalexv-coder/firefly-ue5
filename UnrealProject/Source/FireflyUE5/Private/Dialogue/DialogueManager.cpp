@@ -23,6 +23,18 @@ ADialogueManager::ADialogueManager()
     PrimaryActorTick.bCanEverTick = false;
 }
 
+void ADialogueManager::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (bPlayWelcomeOnBeginPlay && !WelcomeSpeaker.IsEmpty() && !WelcomeLineID.IsEmpty())
+    {
+        UE_LOG(LogTemp, Log, TEXT("[DialogueManager] BeginPlay welcome: %s / %s"),
+            *WelcomeSpeaker, *WelcomeLineID);
+        PlayLine(WelcomeSpeaker, WelcomeLineID);
+    }
+}
+
 void ADialogueManager::PlayLine(const FString& SpeakerName, const FString& LineID)
 {
     // Если уже играет — мягко завершить предыдущую (без Broadcast,

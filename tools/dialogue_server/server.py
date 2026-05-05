@@ -35,6 +35,7 @@ from prompts import (
     turn_schema,
 )
 from tts import make_tts_backend
+from ue_pipeline_client import run_pipeline_in_ue, UEPipelineError
 
 
 load_dotenv()
@@ -78,6 +79,7 @@ class TurnRequest(BaseModel):
 class ReplyLine(BaseModel):
     speaker: str
     line: str
+    line_id: str = ""  # стабильный ID для маршрутизации к LS asset'у в UE
     emotion: str
     audio_url: str | None = None
     duration_ms: int = 0
@@ -96,6 +98,36 @@ class StartResponse(BaseModel):
 def _estimate_duration_ms(text: str) -> int:
     words = max(1, len(text.split()))
     return int(words * 350 + 400)
+
+
+# Demo pool: 8 предзаписанных LSes (по 2 на speaker'a), сгенеренных через
+# pregenerate_demo_assets.py при подготовке демо. Server cycle'ит per-session.
+# После исчерпания пула line_id остаётся пустым → C++ HUD-only fallback.
+_DEMO_LINE_ID_POOL: dict[str, list[str]] = {
+    "Mal":   ["intro_atmo", "orders"],
+    "Zoe":   ["status", "cargo"],
+    "Wash":  ["vote", "dramatic"],
+    "Inara": ["sinclair", "surprise"],
+}
+
+# Per-session счётчики использования пула.
+_DEMO_LINE_ID_USAGE: dict[str, dict[str, int]] = {}
+
+
+def _assign_demo_line_ids(lines: list[dict[str, Any]], session_id: str) -> None:
+    """Назначить line_id из demo-пула для реплик у которых он не установлен."""
+    usage = _DEMO_LINE_ID_USAGE.setdefault(session_id, {})
+    for line in lines:
+        if line.get("line_id"):
+            continue
+        speaker = line.get("speaker", "")
+        pool = _DEMO_LINE_ID_POOL.get(speaker)
+        if not pool:
+            continue
+        idx = usage.get(speaker, 0)
+        if idx < len(pool):
+            line["line_id"] = pool[idx]
+            usage[speaker] = idx + 1
 
 
 def _history_to_user(history: list[HistoryTurn], player_choice: str | None,
@@ -127,6 +159,7 @@ def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
         lines.append({
             "speaker": item.get("speaker", "Mal"),
             "line":    text,
+            "line_id": item.get("line_id", ""),  # backend может проставить
             "emotion": item.get("emotion", "calm"),
             "audio_url": None,
             "duration_ms": _estimate_duration_ms(text),
@@ -147,15 +180,12 @@ def _log_turn(session_id: str, kind: str, payload: dict[str, Any]) -> None:
 
 def _synthesize_audio(lines: list[dict[str, Any]], session_id: str, turn_tag: str) -> None:
     """
-    Для каждой реплики синтезирует аудио (MP3 или WAV — зависит от backend.output_format)
-    и проставляет `audio_url` в словарь.
-    Ошибки TTS — логируются, но не падают endpoint (graceful degradation).
-
-    Имя файла: <session_id>/<turn_tag>_<idx>_<speaker>.{mp3|wav} внутри AUDIO_DIR.
-    audio_url возвращается относительным: /audio/<session_id>/<filename>
+    Для каждой реплики синтезирует TTS аудио (edge-tts → MP3/WAV), проставляет
+    audio_url. line_id назначается отдельно через _assign_demo_line_ids из
+    pre-generated pool (см. pregenerate_demo_assets.py).
     """
     if tts_backend.name == "null":
-        return  # TTS disabled
+        return
 
     session_dir = AUDIO_DIR / session_id
     for idx, line in enumerate(lines):
@@ -167,12 +197,10 @@ def _synthesize_audio(lines: list[dict[str, Any]], session_id: str, turn_tag: st
                 output_dir=session_dir,
                 stem=stem,
             )
-            # Relative URL that the client can GET from the static mount.
             rel = audio_path.relative_to(AUDIO_DIR)
             line["audio_url"] = f"/audio/{rel.as_posix()}"
         except Exception as e:
             log.warning("TTS failed for line %d (%s): %s", idx, line["speaker"], e)
-            # audio_url stays None
 
 
 def _start_audio_dir(session_id: str) -> None:
@@ -211,6 +239,7 @@ def start(_: StartRequest) -> StartResponse:
     if not data["lines"]:
         raise HTTPException(status_code=500, detail="Backend returned no opener line.")
 
+    _assign_demo_line_ids(data["lines"], session_id=session_id)
     _synthesize_audio(data["lines"], session_id=session_id, turn_tag="start")
 
     _log_turn(session_id, "start", {"raw": raw, "normalized": data})
@@ -246,6 +275,8 @@ def turn(req: TurnRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Backend error: {e}") from e
 
     data = _normalize(raw)
+
+    _assign_demo_line_ids(data["lines"], session_id=req.session_id)
 
     turn_tag = f"turn_{len(req.history):03d}"
     _synthesize_audio(data["lines"], session_id=req.session_id, turn_tag=turn_tag)
