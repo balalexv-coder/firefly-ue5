@@ -37,6 +37,24 @@ public:
     TMap<FString, TObjectPtr<AActor>> Speakers;
 
     /**
+     * Yaw offset (degrees) от actor +X axis до character VISUAL forward.
+     * MetaHuman + Sitting_Talking_v2 anim обычно даёт +90° (mesh визуально
+     * faces actor +Y direction). Если у конкретного actor'а другая bind pose
+     * orientation (например, Cooper body imported с другим rotation чем
+     * Kristofer) — добавь override в SpeakerYawOffsetOverride с его именем.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Dialogue")
+    float DefaultMeshForwardYawOffset = 90.f;
+
+    /**
+     * Per-speaker override для yaw offset. Ключ = имя speaker'а ("Mal"/"Zoe"/...).
+     * Если empty — используется DefaultMeshForwardYawOffset. Если есть — используется
+     * заданное значение для этого speaker'а.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Dialogue")
+    TMap<FString, float> SpeakerYawOffsetOverride;
+
+    /**
      * Если true — на BeginPlay автоматически проигрывает приветственную
      * реплику (WelcomeSpeaker / WelcomeLineID). Полезно как smoke-test
      * audio системы перед тем как ждать LLM. По умолчанию OFF — LLM
@@ -97,4 +115,25 @@ private:
 
     /** Cleanup current line state (без Broadcast). */
     void CleanupCurrentLine();
+
+    /**
+     * Для каждого слушателя посчитать FRotator (Pitch, Yaw) который повернёт
+     * его head bone в направлении CurrentSpeaker'а — вычисление чисто
+     * тригонометрическое в Component Space, не зависит от bone axis convention.
+     * Yaw clamp'ится до ±60°, Pitch до ±30° — чтобы голова не сворачивалась
+     * сверх естественного диапазона. Записывает в ABP_Crew переменную
+     * `HeadRotationCS` (FRotator).
+     *
+     * Сам говорящий получает (0,0,0) — голова прямо вперёд.
+     */
+    void UpdateListenerLookAtTargets();
+
+    /** Сбросить HeadRotationCS у всех в (0,0,0) — после окончания реплики. */
+    void ClearAllLookAtTargets();
+
+    /** Найти Body SkeletalMeshComponent у actor'а (по имени "Body"). */
+    class USkeletalMeshComponent* GetBodySkeletalMeshComponent(AActor* Actor) const;
+
+    /** Reflection setter для FRotator BP-переменной HeadRotationCS. */
+    void SetSpeakerHeadRotation(AActor* Listener, const FRotator& RotationCS);
 };

@@ -41,6 +41,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Flow")
 	bool bAutoStartOnBeginPlay = true;
 
+	/**
+	 * Скриптованный demo-режим: при BeginPlay сразу проигрывает фиксированную
+	 * последовательность реплик из pre-gen pool без обращения к LLM-серверу.
+	 * Удобно для демо-сценок и smoke-теста аудио/жестов без задержки на LLM.
+	 *
+	 * Реплики берутся из ScriptedDemoLines (заполняется по умолчанию в
+	 * конструкторе восемью реплицами Mal/Zoe/Wash/Inara из pre-gen demo pool).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Flow")
+	bool bUseScriptedDemo = false;
+
+	/** Прошитая очередь реплик для bUseScriptedDemo. По умолчанию 8 demo lines. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Flow")
+	TArray<FDialogueLine> ScriptedDemoLines;
+
 	/** Сколько орбит-прогресса добавляется за один раунд (0..1 за сессию). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Firefly|Flow", Meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float OrbitProgressPerTurn = 0.15f;
@@ -82,6 +97,13 @@ private:
 	TArray<FDialogueLine> PendingLines;
 	TArray<FString>       PendingOptions;
 	bool                  bLastContinue = true;
+
+	/**
+	 * true когда сейчас играет LS через DialogueManager. Используется
+	 * чтобы игнорировать HUD's OnLineFinished таймер (он стреляет через
+	 * 0.2с на DurationMs=0) и ждать настоящий финиш от LS playback.
+	 */
+	bool                  bWaitingForLSFinish = false;
 
 	void PlayNextLineOrShowOptions();
 	void SetupHUD();

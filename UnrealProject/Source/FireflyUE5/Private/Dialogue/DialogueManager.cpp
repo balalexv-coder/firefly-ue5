@@ -4,11 +4,13 @@
 
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "LevelSequence.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
 #include "MovieSceneSequencePlaybackSettings.h"
+#include "ReferenceSkeleton.h"
 #include "UObject/SoftObjectPath.h"
 
 namespace
@@ -16,6 +18,10 @@ namespace
     constexpr const TCHAR* GeneratedRoot = TEXT("/Game/Audio/Dialogue/Generated");
     constexpr const TCHAR* BodyComponentName = TEXT("Body");
     constexpr const TCHAR* IsSpeakingPropName = TEXT("IsSpeaking");
+    constexpr const TCHAR* HeadRotationPropName = TEXT("HeadRotationCS");
+    constexpr const TCHAR* HeadBoneName = TEXT("head");
+    constexpr float MaxYawDegrees = 179.f;   // effectively no clamp — debug
+    constexpr float MaxPitchDegrees = 89.f;  // effectively no clamp — debug
 }
 
 ADialogueManager::ADialogueManager()
@@ -88,6 +94,9 @@ void ADialogueManager::PlayLine(const FString& SpeakerName, const FString& LineI
     CurrentSpeakerName = SpeakerName;
     CurrentLineID = LineID;
 
+    // Направить взгляд всех слушателей на текущего speaker'а.
+    UpdateListenerLookAtTargets();
+
     Player->OnFinished.AddDynamic(this, &ADialogueManager::HandleLSFinished);
     Player->Play();
 
@@ -122,6 +131,9 @@ void ADialogueManager::HandleLSFinished()
 
 void ADialogueManager::CleanupCurrentLine()
 {
+    // Сбросить look-at у всех слушателей до того как обнулим CurrentSpeaker.
+    ClearAllLookAtTargets();
+
     if (CurrentSpeaker)
     {
         SetSpeakerIsSpeaking(CurrentSpeaker, false);
@@ -199,4 +211,210 @@ void ADialogueManager::SetSpeakerIsSpeaking(AActor* Speaker, bool bValue)
 
     UE_LOG(LogTemp, Warning, TEXT("[DialogueManager] Speaker '%s' has no '%s' SkeletalMeshComponent"),
         *Speaker->GetName(), BodyComponentName);
+}
+
+USkeletalMeshComponent* ADialogueManager::GetBodySkeletalMeshComponent(AActor* Actor) const
+{
+    if (!Actor) return nullptr;
+    TArray<USkeletalMeshComponent*> SkelMeshes;
+    Actor->GetComponents<USkeletalMeshComponent>(SkelMeshes);
+    for (USkeletalMeshComponent* SMC : SkelMeshes)
+    {
+        if (SMC && SMC->GetName() == BodyComponentName)
+        {
+            return SMC;
+        }
+    }
+    return nullptr;
+}
+
+// Вернуть Component Space rotation head bone'а в bind pose (reference skeleton).
+// Не зависит от текущей анимации — это «нейтральная» ориентация head, к которой
+// мы будем применять delta rotation чтобы повернуть head в направлении target.
+static FQuat ComputeHeadBindPoseRotationCS(USkeletalMeshComponent* SMC, FName BoneName)
+{
+    if (!SMC) return FQuat::Identity;
+    USkeletalMesh* SkelMesh = SMC->GetSkeletalMeshAsset();
+    if (!SkelMesh) return FQuat::Identity;
+
+    const FReferenceSkeleton& RefSkel = SkelMesh->GetRefSkeleton();
+    int32 BoneIdx = RefSkel.FindBoneIndex(BoneName);
+    if (BoneIdx == INDEX_NONE) return FQuat::Identity;
+
+    const TArray<FTransform>& RefPose = RefSkel.GetRefBonePose();
+
+    // Composed CS bind transform = product of all parent bind transforms.
+    FTransform Composed = FTransform::Identity;
+    while (BoneIdx != INDEX_NONE)
+    {
+        Composed = RefPose[BoneIdx] * Composed;
+        BoneIdx = RefSkel.GetParentIndex(BoneIdx);
+    }
+    return Composed.GetRotation();
+}
+
+void ADialogueManager::UpdateListenerLookAtTargets()
+{
+    if (!CurrentSpeaker)
+    {
+        return;
+    }
+
+    USkeletalMeshComponent* SpeakerSMC = GetBodySkeletalMeshComponent(CurrentSpeaker);
+    if (!SpeakerSMC)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[DialogueManager] LookAt: speaker '%s' has no Body SMC"),
+            *CurrentSpeaker->GetName());
+        return;
+    }
+    const FVector SpeakerHeadWS = SpeakerSMC->GetSocketLocation(FName(HeadBoneName));
+
+    for (auto& Pair : Speakers)
+    {
+        AActor* Listener = Pair.Value;
+        if (!Listener)
+        {
+            continue;
+        }
+
+        USkeletalMeshComponent* ListenerSMC = GetBodySkeletalMeshComponent(Listener);
+        if (!ListenerSMC)
+        {
+            continue;
+        }
+
+        // Bind pose head rotation в CS — наша «нейтральная» референс-ротация.
+        const FQuat BindRotCS =
+            ComputeHeadBindPoseRotationCS(ListenerSMC, FName(HeadBoneName));
+
+        if (Listener == CurrentSpeaker)
+        {
+            // Сам говорящий — голова в нейтральной bind-позиции.
+            SetSpeakerHeadRotation(Listener, BindRotCS.Rotator());
+            continue;
+        }
+
+        // Target & head positions в CS слушателя.
+        // GetSocketTransform с RTS_Component возвращает позицию head bone'а
+        // в component space (= actor space). Через bone name это работает,
+        // потому что bones считаются sockets на skeletal mesh component.
+        const FVector TargetCS =
+            ListenerSMC->GetComponentTransform().InverseTransformPosition(SpeakerHeadWS);
+        const FVector HeadCS = ListenerSMC->GetSocketTransform(
+            FName(HeadBoneName), RTS_Component
+        ).GetLocation();
+
+        FVector ToTargetCS = (TargetCS - HeadCS).GetSafeNormal();
+        if (ToTargetCS.IsNearlyZero())
+        {
+            SetSpeakerHeadRotation(Listener, BindRotCS.Rotator());
+            continue;
+        }
+
+        // Mesh visual forward axis в actor (CS) frame: повёрнут на +90°
+        // вокруг Z от actor +X — то есть совпадает с actor +Y.
+        // Yaw считаем относительно mesh forward: atan2(right_component,
+        // forward_component), где forward = ToTargetCS.Y, right = -ToTargetCS.X
+        // (mesh right = -actor +X из-за +90° rotation).
+        const float YawDegRaw = FMath::RadiansToDegrees(
+            FMath::Atan2(-ToTargetCS.X, ToTargetCS.Y));
+        const float HorizontalLen = FMath::Sqrt(
+            ToTargetCS.X * ToTargetCS.X + ToTargetCS.Y * ToTargetCS.Y);
+        const float PitchDegRaw = FMath::RadiansToDegrees(
+            FMath::Atan2(ToTargetCS.Z, HorizontalLen));
+
+        const float YawDeg = FMath::Clamp(YawDegRaw,
+            -MaxYawDegrees, MaxYawDegrees);
+        const float PitchDeg = FMath::Clamp(PitchDegRaw,
+            -MaxPitchDegrees, MaxPitchDegrees);
+
+        // Восстанавливаем clamped target direction в actor (CS) frame:
+        //   mesh forward = actor +Y → CS.Y =  cos(pitch) * cos(yaw)
+        //   mesh right   = actor -X → CS.X = -cos(pitch) * sin(yaw)
+        //   mesh up      = actor +Z → CS.Z =  sin(pitch)
+        const float YawRad = FMath::DegreesToRadians(YawDeg);
+        const float PitchRad = FMath::DegreesToRadians(PitchDeg);
+        const FVector ClampedDirCS(
+            -FMath::Cos(PitchRad) * FMath::Sin(YawRad),
+             FMath::Cos(PitchRad) * FMath::Cos(YawRad),
+             FMath::Sin(PitchRad));
+
+        // Reference forward = mesh forward в actor frame = (0, 1, 0).
+        // Delta rotation поворачивает этот forward в направление clamped target.
+        const FVector MeshForwardCS(0.f, 1.f, 0.f);
+        const FQuat DeltaQuat =
+            FQuat::FindBetweenNormals(MeshForwardCS, ClampedDirCS);
+
+        // Final CS rotation = delta * bind. Применяет delta после bind pose
+        // ориентации, что эквивалентно "поверни head из нейтрали к target'у".
+        const FQuat FinalQuat = DeltaQuat * BindRotCS;
+
+        UE_LOG(LogTemp, Log,
+            TEXT("[LookAt] listener='%s' speaker='%s' ToTargetCS=(%.1f,%.1f,%.1f) yaw=%.1f pitch=%.1f"),
+            *Listener->GetName(),
+            *CurrentSpeaker->GetName(),
+            ToTargetCS.X, ToTargetCS.Y, ToTargetCS.Z,
+            YawDeg, PitchDeg);
+
+        SetSpeakerHeadRotation(Listener, FinalQuat.Rotator());
+    }
+}
+
+void ADialogueManager::ClearAllLookAtTargets()
+{
+    // Каждому ставим bind pose CS rotation — head в нейтральной позиции
+    // (как если бы Modify Bone не работал, но animation тоже не overrides head).
+    for (auto& Pair : Speakers)
+    {
+        AActor* Listener = Pair.Value;
+        if (!Listener) continue;
+
+        USkeletalMeshComponent* SMC = GetBodySkeletalMeshComponent(Listener);
+        if (!SMC) continue;
+
+        const FQuat BindRotCS =
+            ComputeHeadBindPoseRotationCS(SMC, FName(HeadBoneName));
+        SetSpeakerHeadRotation(Listener, BindRotCS.Rotator());
+    }
+}
+
+void ADialogueManager::SetSpeakerHeadRotation(AActor* Listener, const FRotator& RotationCS)
+{
+    if (!Listener) return;
+    USkeletalMeshComponent* SMC = GetBodySkeletalMeshComponent(Listener);
+    if (!SMC) return;
+    UAnimInstance* AnimInst = SMC->GetAnimInstance();
+    if (!AnimInst) return;
+
+    // Reflection: FStructProperty с UScriptStruct == FRotator и нужным именем.
+    UClass* AnimClass = AnimInst->GetClass();
+    FString TargetName(HeadRotationPropName);
+    TargetName.TrimStartAndEndInline();
+
+    UScriptStruct* RotatorStruct = TBaseStructure<FRotator>::Get();
+    FStructProperty* RotProp = nullptr;
+    for (TFieldIterator<FStructProperty> It(AnimClass); It; ++It)
+    {
+        if (It->Struct != RotatorStruct)
+        {
+            continue;
+        }
+        FString CandidateName = It->GetName();
+        CandidateName.TrimStartAndEndInline();
+        if (CandidateName.Equals(TargetName, ESearchCase::IgnoreCase))
+        {
+            RotProp = *It;
+            break;
+        }
+    }
+
+    if (RotProp)
+    {
+        RotProp->CopyCompleteValue(RotProp->ContainerPtrToValuePtr<void>(AnimInst), &RotationCS);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[DialogueManager] No FRotator property '%s' on AnimInstance class '%s' (listener '%s')"),
+            HeadRotationPropName, *AnimClass->GetName(), *Listener->GetName());
+    }
 }

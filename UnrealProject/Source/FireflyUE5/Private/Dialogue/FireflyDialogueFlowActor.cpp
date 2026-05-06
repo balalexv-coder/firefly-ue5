@@ -12,6 +12,34 @@ AFireflyDialogueFlowActor::AFireflyDialogueFlowActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	DialogueClient = CreateDefaultSubobject<UDialogueClientComponent>(TEXT("DialogueClient"));
+
+	// Default scripted demo pool — 8 реплик Mal/Zoe/Wash/Inara, тексты
+	// идентичны generate_demo_lines.py (откуда сгенерены WAV → LS).
+	auto MakeLine = [](const TCHAR* Speaker, const TCHAR* LineID, const TCHAR* Text)
+	{
+		FDialogueLine L;
+		L.Speaker = Speaker;
+		L.LineID = LineID;
+		L.Line = Text;
+		L.Emotion = TEXT("calm");
+		return L;
+	};
+	ScriptedDemoLines.Add(MakeLine(TEXT("Mal"),   TEXT("intro_atmo"),
+		TEXT("Two hours to atmo, folks. Grab your cups before we get dusty.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Zoe"),   TEXT("status"),
+		TEXT("Two klicks out, sir. No patrol activity on the scanner.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Wash"),  TEXT("vote"),
+		TEXT("I vote for 'don't explode' again. Always polls well.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Inara"), TEXT("sinclair"),
+		TEXT("Malcolm. About tomorrow. You didn't mention the Sinclair family.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Mal"),   TEXT("orders"),
+		TEXT("Wash, hold us steady on approach. Zoe, run the cargo manifest one more time.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Zoe"),   TEXT("cargo"),
+		TEXT("Cargo's all secure below. Wouldn't want to start the day apologizing again.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Wash"),  TEXT("dramatic"),
+		TEXT("If anyone needs me, I'll be dramatically not crashing the ship.")));
+	ScriptedDemoLines.Add(MakeLine(TEXT("Inara"), TEXT("surprise"),
+		TEXT("Try to act surprised when this goes sideways. It's a small kindness.")));
 }
 
 void AFireflyDialogueFlowActor::BeginPlay()
@@ -86,6 +114,23 @@ void AFireflyDialogueFlowActor::SetupHUD()
 
 void AFireflyDialogueFlowActor::StartDialogue()
 {
+	// Scripted demo: skip LLM/HTTP, проигрываем pre-gen pool по очереди.
+	if (bUseScriptedDemo)
+	{
+		UE_LOG(LogFirefly, Log, TEXT("FlowActor: scripted demo mode — %d lines"),
+			ScriptedDemoLines.Num());
+		PendingLines = ScriptedDemoLines;
+		PendingOptions.Empty();
+		bLastContinue = false;
+		if (HUDWidget)
+		{
+			HUDWidget->ClearAll();
+			HUDWidget->SetWaiting(false);
+		}
+		PlayNextLineOrShowOptions();
+		return;
+	}
+
 	if (!DialogueClient) return;
 	if (HUDWidget)
 	{
@@ -132,6 +177,13 @@ void AFireflyDialogueFlowActor::HandleError(const FString& Err)
 
 void AFireflyDialogueFlowActor::HandleLineFinished()
 {
+	// HUD-таймер стреляет даже когда мы играем LS (он не знает про DialogueManager).
+	// В LS-режиме настоящий финиш приходит через HandleDialogueManagerLineFinished —
+	// игнорируем HUD-сигнал.
+	if (bWaitingForLSFinish)
+	{
+		return;
+	}
 	PlayNextLineOrShowOptions();
 }
 
@@ -139,6 +191,7 @@ void AFireflyDialogueFlowActor::HandleDialogueManagerLineFinished(const FString&
 {
 	UE_LOG(LogFirefly, Log, TEXT("FlowActor: DialogueManager finished line speaker='%s' id='%s'"),
 		*Speaker, *LineID);
+	bWaitingForLSFinish = false;
 	PlayNextLineOrShowOptions();
 }
 
@@ -179,13 +232,16 @@ void AFireflyDialogueFlowActor::PlayNextLineOrShowOptions()
 			{
 				HUDWidget->PlayLine(Line.Speaker, Line.Line, /*DurationMs=*/0);
 			}
+			bWaitingForLSFinish = true;
 			DialogueManager->PlayLine(Line.Speaker, Line.LineID);
 			// Завершение придёт через HandleDialogueManagerLineFinished.
+			// HUD-finish от 0.2с-таймера будет проигнорирован (см. HandleLineFinished).
 			return;
 		}
 
 		// Fallback: HUD-only текстовый режим (для player'а или
 		// если LineID не указан / DialogueManager не задан).
+		bWaitingForLSFinish = false;
 		if (HUDWidget)
 			HUDWidget->PlayLine(Line.Speaker, Line.Line, Line.DurationMs);
 		else
