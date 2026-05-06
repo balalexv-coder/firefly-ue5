@@ -27,6 +27,16 @@ struct FIREFLYUE5_API FDialogueLine
 	 */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere) FString LineID;
 
+	/**
+	 * Кому обращена реплика (массив имён speaker'ов как в ключах Speakers map:
+	 * "Mal"/"Zoe"/"Wash"/"Inara"). Может быть пустым (общая реплика — никому
+	 * конкретно), или содержать одного, или нескольких адресатов.
+	 *
+	 * Используется DialogueManager: говорящий поворачивает голову к первому
+	 * адресату из массива. Слушатели (не addressees) смотрят на говорящего.
+	 */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere) TArray<FString> Addressees;
+
 	/** Эмоциональный тон: calm, gruff, bright, dry, cryptic, warm, flirty, amused, serious, deadpan. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere) FString Emotion;
 

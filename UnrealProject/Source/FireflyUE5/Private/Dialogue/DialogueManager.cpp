@@ -37,11 +37,12 @@ void ADialogueManager::BeginPlay()
     {
         UE_LOG(LogTemp, Log, TEXT("[DialogueManager] BeginPlay welcome: %s / %s"),
             *WelcomeSpeaker, *WelcomeLineID);
-        PlayLine(WelcomeSpeaker, WelcomeLineID);
+        PlayLine(WelcomeSpeaker, WelcomeLineID, TArray<FString>());
     }
 }
 
-void ADialogueManager::PlayLine(const FString& SpeakerName, const FString& LineID)
+void ADialogueManager::PlayLine(const FString& SpeakerName, const FString& LineID,
+                                const TArray<FString>& Addressees)
 {
     // Если уже играет — мягко завершить предыдущую (без Broadcast,
     // потому что новая реплика "проглатывает" старую).
@@ -93,8 +94,10 @@ void ADialogueManager::PlayLine(const FString& SpeakerName, const FString& LineI
     CurrentSpeaker = Speaker;
     CurrentSpeakerName = SpeakerName;
     CurrentLineID = LineID;
+    CurrentAddressees = Addressees;
 
-    // Направить взгляд всех слушателей на текущего speaker'а.
+    // Направить взгляд всех слушателей на текущего speaker'а,
+    // и говорящего — на первого адресата.
     UpdateListenerLookAtTargets();
 
     Player->OnFinished.AddDynamic(this, &ADialogueManager::HandleLSFinished);
@@ -148,6 +151,7 @@ void ADialogueManager::CleanupCurrentLine()
 
     CurrentSpeakerName.Empty();
     CurrentLineID.Empty();
+    CurrentAddressees.Reset();
 }
 
 void ADialogueManager::SetSpeakerIsSpeaking(AActor* Speaker, bool bValue)
@@ -253,6 +257,63 @@ static FQuat ComputeHeadBindPoseRotationCS(USkeletalMeshComponent* SMC, FName Bo
     return Composed.GetRotation();
 }
 
+// Вычислить FRotator для head bone актёра, чтобы он смотрел на TargetWS.
+// Возвращает rotation в Component Space с учётом bind pose + clamp pitch/yaw.
+static FRotator ComputeHeadLookAtRotation(
+    USkeletalMeshComponent* ActorSMC,
+    const FVector& TargetWS,
+    const FQuat& BindRotCS,
+    float MaxYawDeg,
+    float MaxPitchDeg,
+    FName HeadBone,
+    FVector& OutToTargetCS,
+    float& OutYawDeg,
+    float& OutPitchDeg)
+{
+    // Преобразуем target и head в Component Space актёра.
+    const FVector TargetCS =
+        ActorSMC->GetComponentTransform().InverseTransformPosition(TargetWS);
+    const FVector HeadCS = ActorSMC->GetSocketTransform(
+        HeadBone, RTS_Component
+    ).GetLocation();
+
+    FVector ToTargetCS = (TargetCS - HeadCS).GetSafeNormal();
+    OutToTargetCS = ToTargetCS;
+    if (ToTargetCS.IsNearlyZero())
+    {
+        OutYawDeg = 0.f; OutPitchDeg = 0.f;
+        return BindRotCS.Rotator();
+    }
+
+    // Mesh visual forward axis в actor frame повёрнут на +90° вокруг Z
+    // (mesh forward совпадает с actor +Y). Yaw — относительно mesh forward.
+    const float YawDegRaw = FMath::RadiansToDegrees(
+        FMath::Atan2(-ToTargetCS.X, ToTargetCS.Y));
+    const float HorizontalLen = FMath::Sqrt(
+        ToTargetCS.X * ToTargetCS.X + ToTargetCS.Y * ToTargetCS.Y);
+    const float PitchDegRaw = FMath::RadiansToDegrees(
+        FMath::Atan2(ToTargetCS.Z, HorizontalLen));
+
+    const float YawDeg = FMath::Clamp(YawDegRaw, -MaxYawDeg, MaxYawDeg);
+    const float PitchDeg = FMath::Clamp(PitchDegRaw, -MaxPitchDeg, MaxPitchDeg);
+    OutYawDeg = YawDeg;
+    OutPitchDeg = PitchDeg;
+
+    const float YawRad = FMath::DegreesToRadians(YawDeg);
+    const float PitchRad = FMath::DegreesToRadians(PitchDeg);
+    const FVector ClampedDirCS(
+        -FMath::Cos(PitchRad) * FMath::Sin(YawRad),
+         FMath::Cos(PitchRad) * FMath::Cos(YawRad),
+         FMath::Sin(PitchRad));
+
+    const FVector MeshForwardCS(0.f, 1.f, 0.f);
+    const FQuat DeltaQuat =
+        FQuat::FindBetweenNormals(MeshForwardCS, ClampedDirCS);
+
+    const FQuat FinalQuat = DeltaQuat * BindRotCS;
+    return FinalQuat.Rotator();
+}
+
 void ADialogueManager::UpdateListenerLookAtTargets()
 {
     if (!CurrentSpeaker)
@@ -269,6 +330,20 @@ void ADialogueManager::UpdateListenerLookAtTargets()
     }
     const FVector SpeakerHeadWS = SpeakerSMC->GetSocketLocation(FName(HeadBoneName));
 
+    // Выбрать target для самого говорящего: head bone первого адресата.
+    AActor* SpeakerLookAtActor = nullptr;
+    FString SpeakerTargetName;
+    for (const FString& Addressee : CurrentAddressees)
+    {
+        TObjectPtr<AActor>* Found = Speakers.Find(Addressee);
+        if (Found && *Found && *Found != CurrentSpeaker)
+        {
+            SpeakerLookAtActor = *Found;
+            SpeakerTargetName = Addressee;
+            break;
+        }
+    }
+
     for (auto& Pair : Speakers)
     {
         AActor* Listener = Pair.Value;
@@ -283,80 +358,48 @@ void ADialogueManager::UpdateListenerLookAtTargets()
             continue;
         }
 
-        // Bind pose head rotation в CS — наша «нейтральная» референс-ротация.
         const FQuat BindRotCS =
             ComputeHeadBindPoseRotationCS(ListenerSMC, FName(HeadBoneName));
 
+        // Определяем target: для говорящего — first addressee, для остальных — speaker.
+        AActor* TargetActor = nullptr;
+        FString TargetName;
         if (Listener == CurrentSpeaker)
         {
-            // Сам говорящий — голова в нейтральной bind-позиции.
-            SetSpeakerHeadRotation(Listener, BindRotCS.Rotator());
-            continue;
+            TargetActor = SpeakerLookAtActor;
+            TargetName = SpeakerTargetName;
+            if (!TargetActor)
+            {
+                // Нет адресата (или addressee == self) — голова в нейтрали.
+                SetSpeakerHeadRotation(Listener, BindRotCS.Rotator());
+                continue;
+            }
         }
-
-        // Target & head positions в CS слушателя.
-        // GetSocketTransform с RTS_Component возвращает позицию head bone'а
-        // в component space (= actor space). Через bone name это работает,
-        // потому что bones считаются sockets на skeletal mesh component.
-        const FVector TargetCS =
-            ListenerSMC->GetComponentTransform().InverseTransformPosition(SpeakerHeadWS);
-        const FVector HeadCS = ListenerSMC->GetSocketTransform(
-            FName(HeadBoneName), RTS_Component
-        ).GetLocation();
-
-        FVector ToTargetCS = (TargetCS - HeadCS).GetSafeNormal();
-        if (ToTargetCS.IsNearlyZero())
+        else
         {
-            SetSpeakerHeadRotation(Listener, BindRotCS.Rotator());
-            continue;
+            TargetActor = CurrentSpeaker;
+            TargetName = CurrentSpeakerName;
         }
 
-        // Mesh visual forward axis в actor (CS) frame: повёрнут на +90°
-        // вокруг Z от actor +X — то есть совпадает с actor +Y.
-        // Yaw считаем относительно mesh forward: atan2(right_component,
-        // forward_component), где forward = ToTargetCS.Y, right = -ToTargetCS.X
-        // (mesh right = -actor +X из-за +90° rotation).
-        const float YawDegRaw = FMath::RadiansToDegrees(
-            FMath::Atan2(-ToTargetCS.X, ToTargetCS.Y));
-        const float HorizontalLen = FMath::Sqrt(
-            ToTargetCS.X * ToTargetCS.X + ToTargetCS.Y * ToTargetCS.Y);
-        const float PitchDegRaw = FMath::RadiansToDegrees(
-            FMath::Atan2(ToTargetCS.Z, HorizontalLen));
+        // Получаем head bone target'а в world space.
+        USkeletalMeshComponent* TargetSMC = GetBodySkeletalMeshComponent(TargetActor);
+        if (!TargetSMC) { continue; }
+        const FVector TargetHeadWS = TargetSMC->GetSocketLocation(FName(HeadBoneName));
 
-        const float YawDeg = FMath::Clamp(YawDegRaw,
-            -MaxYawDegrees, MaxYawDegrees);
-        const float PitchDeg = FMath::Clamp(PitchDegRaw,
-            -MaxPitchDegrees, MaxPitchDegrees);
-
-        // Восстанавливаем clamped target direction в actor (CS) frame:
-        //   mesh forward = actor +Y → CS.Y =  cos(pitch) * cos(yaw)
-        //   mesh right   = actor -X → CS.X = -cos(pitch) * sin(yaw)
-        //   mesh up      = actor +Z → CS.Z =  sin(pitch)
-        const float YawRad = FMath::DegreesToRadians(YawDeg);
-        const float PitchRad = FMath::DegreesToRadians(PitchDeg);
-        const FVector ClampedDirCS(
-            -FMath::Cos(PitchRad) * FMath::Sin(YawRad),
-             FMath::Cos(PitchRad) * FMath::Cos(YawRad),
-             FMath::Sin(PitchRad));
-
-        // Reference forward = mesh forward в actor frame = (0, 1, 0).
-        // Delta rotation поворачивает этот forward в направление clamped target.
-        const FVector MeshForwardCS(0.f, 1.f, 0.f);
-        const FQuat DeltaQuat =
-            FQuat::FindBetweenNormals(MeshForwardCS, ClampedDirCS);
-
-        // Final CS rotation = delta * bind. Применяет delta после bind pose
-        // ориентации, что эквивалентно "поверни head из нейтрали к target'у".
-        const FQuat FinalQuat = DeltaQuat * BindRotCS;
+        FVector OutToTargetCS;
+        float OutYaw, OutPitch;
+        const FRotator HeadRot = ComputeHeadLookAtRotation(
+            ListenerSMC, TargetHeadWS, BindRotCS,
+            MaxYawDegrees, MaxPitchDegrees, FName(HeadBoneName),
+            OutToTargetCS, OutYaw, OutPitch);
 
         UE_LOG(LogTemp, Log,
-            TEXT("[LookAt] listener='%s' speaker='%s' ToTargetCS=(%.1f,%.1f,%.1f) yaw=%.1f pitch=%.1f"),
-            *Listener->GetName(),
-            *CurrentSpeaker->GetName(),
-            ToTargetCS.X, ToTargetCS.Y, ToTargetCS.Z,
-            YawDeg, PitchDeg);
+            TEXT("[LookAt] %s -> %s ToTargetCS=(%.1f,%.1f,%.1f) yaw=%.1f pitch=%.1f"),
+            *Listener->GetName(), *TargetActor->GetName(),
+            OutToTargetCS.X, OutToTargetCS.Y, OutToTargetCS.Z,
+            OutYaw, OutPitch);
 
-        SetSpeakerHeadRotation(Listener, FinalQuat.Rotator());
+        SetSpeakerHeadRotation(Listener, HeadRot);
     }
 }
 

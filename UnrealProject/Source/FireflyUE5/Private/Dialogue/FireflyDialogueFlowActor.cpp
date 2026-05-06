@@ -8,6 +8,8 @@
 #include "Blueprint/UserWidget.h"
 #include "Engine/Engine.h"
 
+#include <initializer_list>
+
 AFireflyDialogueFlowActor::AFireflyDialogueFlowActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -15,31 +17,42 @@ AFireflyDialogueFlowActor::AFireflyDialogueFlowActor()
 
 	// Default scripted demo pool — 8 реплик Mal/Zoe/Wash/Inara, тексты
 	// идентичны generate_demo_lines.py (откуда сгенерены WAV → LS).
-	auto MakeLine = [](const TCHAR* Speaker, const TCHAR* LineID, const TCHAR* Text)
+	// Addressees — кому говорящий смотрит в глаза (первый из массива).
+	auto MakeLine = [](const TCHAR* Speaker, const TCHAR* LineID,
+		const TCHAR* Text, std::initializer_list<const TCHAR*> Addressees)
 	{
 		FDialogueLine L;
 		L.Speaker = Speaker;
 		L.LineID = LineID;
 		L.Line = Text;
 		L.Emotion = TEXT("calm");
+		for (const TCHAR* A : Addressees) { L.Addressees.Add(FString(A)); }
 		return L;
 	};
 	ScriptedDemoLines.Add(MakeLine(TEXT("Mal"),   TEXT("intro_atmo"),
-		TEXT("Two hours to atmo, folks. Grab your cups before we get dusty.")));
+		TEXT("Two hours to atmo, folks. Grab your cups before we get dusty."),
+		{ TEXT("Zoe"), TEXT("Wash"), TEXT("Inara") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Zoe"),   TEXT("status"),
-		TEXT("Two klicks out, sir. No patrol activity on the scanner.")));
+		TEXT("Two klicks out, sir. No patrol activity on the scanner."),
+		{ TEXT("Mal") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Wash"),  TEXT("vote"),
-		TEXT("I vote for 'don't explode' again. Always polls well.")));
+		TEXT("I vote for 'don't explode' again. Always polls well."),
+		{ TEXT("Mal"), TEXT("Zoe"), TEXT("Inara") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Inara"), TEXT("sinclair"),
-		TEXT("Malcolm. About tomorrow. You didn't mention the Sinclair family.")));
+		TEXT("Malcolm. About tomorrow. You didn't mention the Sinclair family."),
+		{ TEXT("Mal") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Mal"),   TEXT("orders"),
-		TEXT("Wash, hold us steady on approach. Zoe, run the cargo manifest one more time.")));
+		TEXT("Wash, hold us steady on approach. Zoe, run the cargo manifest one more time."),
+		{ TEXT("Wash"), TEXT("Zoe") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Zoe"),   TEXT("cargo"),
-		TEXT("Cargo's all secure below. Wouldn't want to start the day apologizing again.")));
+		TEXT("Cargo's all secure below. Wouldn't want to start the day apologizing again."),
+		{ TEXT("Mal") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Wash"),  TEXT("dramatic"),
-		TEXT("If anyone needs me, I'll be dramatically not crashing the ship.")));
+		TEXT("If anyone needs me, I'll be dramatically not crashing the ship."),
+		{ TEXT("Mal"), TEXT("Zoe"), TEXT("Inara") }));
 	ScriptedDemoLines.Add(MakeLine(TEXT("Inara"), TEXT("surprise"),
-		TEXT("Try to act surprised when this goes sideways. It's a small kindness.")));
+		TEXT("Try to act surprised when this goes sideways. It's a small kindness."),
+		{ TEXT("Mal") }));
 }
 
 void AFireflyDialogueFlowActor::BeginPlay()
@@ -233,7 +246,7 @@ void AFireflyDialogueFlowActor::PlayNextLineOrShowOptions()
 				HUDWidget->PlayLine(Line.Speaker, Line.Line, /*DurationMs=*/0);
 			}
 			bWaitingForLSFinish = true;
-			DialogueManager->PlayLine(Line.Speaker, Line.LineID);
+			DialogueManager->PlayLine(Line.Speaker, Line.LineID, Line.Addressees);
 			// Завершение придёт через HandleDialogueManagerLineFinished.
 			// HUD-finish от 0.2с-таймера будет проигнорирован (см. HandleLineFinished).
 			return;

@@ -76,10 +76,15 @@ public:
      * включает IsSpeaking=true на ABP_Crew speaker'а, играет, на финише
      * выключает IsSpeaking + cleanup'ит spawned actor + Broadcast OnLineFinished.
      *
+     * Addressees — кому обращена реплика (имена speaker'ов из Speakers map).
+     * Говорящий поворачивает голову в сторону первого адресата из массива.
+     * Если массив пустой — голова в нейтральной позиции (прямо).
+     *
      * Если уже играет другая реплика — сначала завершает её принудительно.
      */
     UFUNCTION(BlueprintCallable, Category = "Firefly|Dialogue")
-    void PlayLine(const FString& SpeakerName, const FString& LineID);
+    void PlayLine(const FString& SpeakerName, const FString& LineID,
+                  const TArray<FString>& Addressees);
 
     /** Принудительно остановить текущее воспроизведение (если есть). */
     UFUNCTION(BlueprintCallable, Category = "Firefly|Dialogue")
@@ -109,6 +114,9 @@ private:
 
     /** Текущий line ID — отдаётся в OnLineFinished. */
     FString CurrentLineID;
+
+    /** Кому обращена текущая реплика — говорящий смотрит на первого из них. */
+    TArray<FString> CurrentAddressees;
 
     /** Установить bool-переменную IsSpeaking на ABP_Crew (Body component) speaker'а. */
     void SetSpeakerIsSpeaking(AActor* Speaker, bool bValue);
